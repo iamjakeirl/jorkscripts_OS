@@ -1,0 +1,203 @@
+// Remove the plugins block since java-library is already applied by the parent
+// plugins {
+//     id 'java'
+// }
+
+// Remove repositories block since it's already configured in the parent
+// repositories {
+//     mavenCentral()
+//     maven { url "https://repo1.maven.org/maven2" }
+//     maven { url "https://openpnp.github.io/maven" }
+//     google()
+//     flatDir {
+//         dirs '../../lib'
+//     }
+// }
+
+dependencies {
+    // API.jar is already provided by the parent build.gradle
+    // JavaFX is bundled with the client as well
+    
+    // Add utils project as a dependency
+    implementation project(':utils')
+}
+
+// Configure source sets to include resources
+sourceSets {
+    main {
+        resources {
+            srcDirs = ['src/resources']
+        }
+    }
+}
+
+// Default JAR task - includes all features (development version)
+jar {
+    archiveFileName = 'jorkHunter.jar'
+    destinationDirectory = file('jar/')
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    manifest {
+        attributes(
+                'Manifest-Version': '1.0',
+                'Created-By': 'jork'
+        )
+    }
+
+    // Include the compiled classes from the 'utils' project
+    from project(':utils').sourceSets.main.output
+    
+    // Exclude other variant classes, keep only AllFeatures
+    exclude '**/variants/JorkHunterBirdSnares.class'
+    exclude '**/variants/JorkHunterChinchompas.class'
+    
+    // Include default config
+    from('src/resources/default-hunting-config.properties') {
+        into '/'
+        rename { 'hunting-config.properties' }
+    }
+    
+    // Include logo image from main/resources
+    from('src/main/resources/jorkhunter_logo.png') {
+        into '/'
+    }
+
+    // Automatically copy the JAR after it's built
+    doLast {
+        def userHome = System.getProperty('user.home')
+        def targetDir = file("${userHome}/.osmb/Scripts")
+        def jarFile = archiveFile.get().asFile
+
+        // Ensure the target directory exists
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        copy {
+            from jarFile
+            into targetDir
+        }
+
+        println "✅ Copied ${jarFile.name} to ${targetDir.absolutePath}"
+    }
+}
+
+// Bird Snares only variant
+task jarBirdSnares(type: Jar) {
+    archiveFileName = 'jorkHunter-BirdSnares.jar'
+    destinationDirectory = file('jar/')
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    
+    manifest {
+        attributes(
+                'Manifest-Version': '1.0',
+                'Created-By': 'jork',
+                'Variant': 'Bird Snares Only'
+        )
+    }
+    
+    // Include main classes
+    from sourceSets.main.output
+    
+    // Include utils classes
+    from project(':utils').sourceSets.main.output
+    
+    // Exclude other variant classes, keep only BirdSnares
+    exclude '**/variants/JorkHunterAllFeatures.class'
+    exclude '**/variants/JorkHunterChinchompas.class'
+    
+    // Include bird snares specific config
+    from('src/resources/birdsnares-config.properties') {
+        into '/'
+        rename { 'hunting-config.properties' }
+    }
+    
+    // Include logo image from main/resources
+    from('src/main/resources/jorkhunter_logo.png') {
+        into '/'
+    }
+    
+    doLast {
+        def userHome = System.getProperty('user.home')
+        def targetDir = file("${userHome}/.osmb/Scripts")
+        def jarFile = archiveFile.get().asFile
+
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        copy {
+            from jarFile
+            into targetDir
+        }
+
+        println "✅ Copied ${jarFile.name} to ${targetDir.absolutePath}"
+    }
+}
+
+// Chinchompas only variant
+task jarChinchompas(type: Jar) {
+    archiveFileName = 'jorkHunter-Chinchompas.jar'
+    destinationDirectory = file('jar/')
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    
+    manifest {
+        attributes(
+                'Manifest-Version': '1.0',
+                'Created-By': 'jork',
+                'Variant': 'Chinchompas Only'
+        )
+    }
+    
+    // Include main classes
+    from sourceSets.main.output
+    
+    // Include utils classes
+    from project(':utils').sourceSets.main.output
+    
+    // Exclude other variant classes, keep only Chinchompas
+    exclude '**/variants/JorkHunterAllFeatures.class'
+    exclude '**/variants/JorkHunterBirdSnares.class'
+    
+    // Include chinchompas specific config
+    from('src/resources/chinchompas-config.properties') {
+        into '/'
+        rename { 'hunting-config.properties' }
+    }
+    
+    // Include logo image from main/resources
+    from('src/main/resources/jorkhunter_logo.png') {
+        into '/'
+    }
+    
+    doLast {
+        def userHome = System.getProperty('user.home')
+        def targetDir = file("${userHome}/.osmb/Scripts")
+        def jarFile = archiveFile.get().asFile
+
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        copy {
+            from jarFile
+            into targetDir
+        }
+
+        println "✅ Copied ${jarFile.name} to ${targetDir.absolutePath}"
+    }
+}
+
+// Task to build all variants
+task buildAllVariants {
+    dependsOn jar, jarBirdSnares, jarChinchompas
+    doLast {
+        println "✅ Built all jorkHunter variants"
+    }
+} 
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+} 

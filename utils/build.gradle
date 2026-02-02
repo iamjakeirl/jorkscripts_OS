@@ -1,0 +1,18 @@
+// Utils project - shared utilities for all scripts
+
+// The java-library plugin is already applied by the parent build.gradle
+
+// No additional dependencies needed beyond what's provided by parent
+dependencies {
+    // API.jar and JavaFX are already provided by parent build.gradle
+}
+
+// Configure source sets to use the correct src directory structure
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+            exclude 'docs/**'
+        }
+    }
+} 

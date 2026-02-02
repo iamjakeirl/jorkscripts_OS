@@ -1,0 +1,62 @@
+plugins {
+    id 'java'
+}
+
+version = '1.0'
+
+dependencies {
+    implementation project(':utils')
+}
+
+jar {
+    archiveBaseName = 'Ectofuntus'
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    manifest {
+        attributes(
+            'Manifest-Version': '1.0',
+            'Created-By': 'jork'
+        )
+    }
+
+    // Include main classes
+    from sourceSets.main.output
+
+    // Include utils classes directly
+    from project(':utils').sourceSets.main.output
+
+    doLast {
+        def userHome = System.getProperty('user.home')
+        def targetDir = file("${userHome}/.osmb/Scripts")
+        def jarFile = archiveFile.get().asFile
+
+        // Ensure the target directory exists
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        copy {
+            from jarFile
+            into targetDir
+        }
+
+        println "✅ Copied ${jarFile.name} to ${targetDir.absolutePath}"
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}

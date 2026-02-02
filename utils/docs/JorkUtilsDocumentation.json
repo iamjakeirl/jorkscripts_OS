@@ -1,0 +1,112 @@
+{
+  "documentationVersion": "1.0",
+  "author": "jork",
+  "description": "A collection of custom utility classes designed to standardize and simplify common tasks for jork's OSMB scripts.",
+  "utilities": [
+    {
+      "className": "ScriptLogger",
+      "filePath": "utils/ScriptLogger.java",
+      "type": "Static Utility",
+      "description": "Provides a set of static methods for consistent, formatted logging across all scripts. This class should not be instantiated.",
+      "methods": [
+        {
+          "name": "info",
+          "description": "Logs a standard, blue informational message.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance from which the log is being called (use 'this')." },
+            { "name": "message", "type": "String", "description": "The content of the log message." }
+          ]
+        },
+        {
+          "name": "warning",
+          "description": "Logs an orange warning message, intended for non-critical failures or recoverable errors.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
+            { "name": "message", "type": "String", "description": "The warning content." }
+          ]
+        },
+        {
+          "name": "error",
+          "description": "Logs a red error message, intended for critical, unrecoverable failures.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
+            { "name": "message", "type": "String", "description": "The error content." }
+          ]
+        },
+        {
+          "name": "debug",
+          "description": "Logs a grey debug message for verbose, detailed information not typically needed for normal operation.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
+            { "name": "message", "type": "String", "description": "The debug content." }
+          ]
+        },
+        {
+          "name": "navigation",
+          "description": "Logs a message specifically for navigation actions.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
+            { "name": "destination", "type": "String", "description": "A description of the navigation target." }
+          ]
+        },
+        {
+          "name": "exception",
+          "description": "Logs a caught exception with its message and a debug-level stack trace.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
+            { "name": "action", "type": "String", "description": "The action that was being attempted when the exception occurred." },
+            { "name": "exception", "type": "Exception", "description": "The caught exception object." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "Navigation",
+      "filePath": "utils/Navigation.java",
+      "type": "Instance-based Utility",
+      "description": "Handles all generic player movement, including pathfinding and dynamic obstacle handling. An instance of this class should be created in the script's constructor.",
+      "constructor": {
+        "description": "Creates a new Navigation instance tied to a specific script.",
+        "parameters": [
+          { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance this navigator will control (use 'this')." }
+        ]
+      },
+      "components": [
+        {
+          "name": "Obstacle",
+          "type": "Interface",
+          "description": "A contract for defining script-specific obstacles (e.g., doors, stairs, ladders) that the navigator can handle dynamically.",
+          "methods": [
+            { "name": "getArea", "returns": "com.osmb.api.location.area.Area", "description": "Returns the area where the obstacle is located and should be handled." },
+            { "name": "needsHandling", "returns": "boolean", "description": "Logic to determine if the obstacle currently needs to be interacted with (e.g., is a door closed?)." },
+            { "name": "handle", "returns": "boolean", "description": "The specific logic to interact with the obstacle (e.g., click 'Open' on a door)." }
+          ]
+        }
+      ],
+      "methods": [
+        {
+          "name": "navigateTo",
+          "description": "The core navigation method. Directs the player to a destination, automatically handling defined obstacles and supporting custom walk configurations.",
+          "overloads": [
+            {
+              "signature": "navigateTo(Area destination, List<Obstacle> obstacles, BooleanSupplier breakCondition, int timeout, WalkConfig.Builder builder)",
+              "description": "The most flexible navigation method, combining custom settings with automated obstacle handling."
+            },
+            {
+              "signature": "navigateTo(Area destination, List<Obstacle> obstacles)",
+              "description": "Convenience method. Navigates with specified obstacles using a default timeout and walk behavior."
+            },
+            {
+              "signature": "navigateTo(Area destination)",
+              "description": "The simplest method. Navigates directly to a destination with no special obstacles, using default timeout and walk behavior."
+            },
+            {
+              "signature": "navigateTo(Area destination, WalkConfig config)",
+              "description": "Navigates to a destination using a fully pre-built and customized WalkConfig."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+} 

@@ -1,0 +1,32 @@
+# ============================================================================
+# JorkScripts OS (Public) - .gitignore
+# Place this file as .gitignore in the jorkScripts_OS repo
+# ============================================================================
+
+# Build outputs
+build/
+bin/
+out/
+*.class
+*.jar
+*.war
+
+# Gradle caches
+.gradle/
+
+# IDE-specific
+.idea/
+.vscode/
+.cursor/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.bak

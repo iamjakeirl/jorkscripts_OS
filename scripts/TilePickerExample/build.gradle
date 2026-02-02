@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+}
+
+version = '1.0'
+
+dependencies {
+    implementation project(':utils')
+    compileOnly files('/home/jork/.osmb/OSMobileBot.jar')
+}
+
+jar {
+    archiveBaseName = 'TilePickerExample'
+    
+    dependsOn project(':utils').tasks.jar
+    
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    
+    doLast {
+        def targetDir = file('/home/jork/.osmb/Scripts')
+        if (targetDir.exists()) {
+            copy {
+                from archiveFile
+                into targetDir
+            }
+            println "✅ Copied ${archiveFileName.get()} to ${targetDir}"
+        }
+    }
+}
