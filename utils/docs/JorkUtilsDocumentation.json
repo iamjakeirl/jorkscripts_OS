@@ -1,112 +1,729 @@
 {
-  "documentationVersion": "1.0",
+  "documentationVersion": "1.1",
+  "lastUpdated": "2026-02-02",
   "author": "jork",
   "description": "A collection of custom utility classes designed to standardize and simplify common tasks for jork's OSMB scripts.",
   "utilities": [
     {
       "className": "ScriptLogger",
-      "filePath": "utils/ScriptLogger.java",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/ScriptLogger.java",
       "type": "Static Utility",
-      "description": "Provides a set of static methods for consistent, formatted logging across all scripts. This class should not be instantiated.",
+      "description": "Consistent logging helpers with global log-level filtering and script-friendly formatting.",
       "methods": [
         {
-          "name": "info",
-          "description": "Logs a standard, blue informational message.",
+          "name": "setMinLevel",
+          "description": "Sets the global minimum log level; messages below this are suppressed.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance from which the log is being called (use 'this')." },
-            { "name": "message", "type": "String", "description": "The content of the log message." }
+            { "name": "level", "type": "ScriptLogger.Level", "description": "Minimum log level." }
+          ]
+        },
+        {
+          "name": "setDebugEnabled",
+          "description": "Convenience toggle for enabling or disabling debug logging.",
+          "parameters": [
+            { "name": "enabled", "type": "boolean", "description": "True to enable DEBUG level." }
+          ]
+        },
+        {
+          "name": "info",
+          "description": "Logs a standard informational message.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "message", "type": "String", "description": "Message text." }
           ]
         },
         {
           "name": "warning",
-          "description": "Logs an orange warning message, intended for non-critical failures or recoverable errors.",
+          "description": "Logs a warning message for recoverable errors.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
-            { "name": "message", "type": "String", "description": "The warning content." }
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "message", "type": "String", "description": "Message text." }
           ]
         },
         {
           "name": "error",
-          "description": "Logs a red error message, intended for critical, unrecoverable failures.",
+          "description": "Logs a critical error message.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
-            { "name": "message", "type": "String", "description": "The error content." }
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "message", "type": "String", "description": "Message text." }
           ]
         },
         {
           "name": "debug",
-          "description": "Logs a grey debug message for verbose, detailed information not typically needed for normal operation.",
+          "description": "Logs a verbose debug message.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
-            { "name": "message", "type": "String", "description": "The debug content." }
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "message", "type": "String", "description": "Message text." }
           ]
         },
         {
-          "name": "navigation",
-          "description": "Logs a message specifically for navigation actions.",
+          "name": "actionAttempt",
+          "description": "Logs an action attempt for standardized flow tracing.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
-            { "name": "destination", "type": "String", "description": "A description of the navigation target." }
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "action", "type": "String", "description": "Action text." }
+          ]
+        },
+        {
+          "name": "actionSuccess",
+          "description": "Logs a successful action.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "action", "type": "String", "description": "Action text." }
+          ]
+        },
+        {
+          "name": "actionFailure",
+          "description": "Logs a failed action with retry info.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "action", "type": "String", "description": "Action text." },
+            { "name": "retryCount", "type": "int", "description": "Current retry count." },
+            { "name": "maxRetries", "type": "int", "description": "Max retries allowed." }
+          ]
+        },
+        {
+          "name": "stateChange",
+          "description": "Logs a state transition with optional reason.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "oldState", "type": "Object", "description": "Previous state." },
+            { "name": "newState", "type": "Object", "description": "New state." },
+            { "name": "reason", "type": "String", "description": "Reason for transition." }
+          ]
+        },
+        {
+          "name": "inventoryStatus",
+          "description": "Logs inventory snapshot as name/count pairs.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "itemCounts", "type": "Object...", "description": "Pairs of (name, count)." }
           ]
         },
         {
           "name": "exception",
-          "description": "Logs a caught exception with its message and a debug-level stack trace.",
+          "description": "Logs exception details with stack trace at debug level.",
           "parameters": [
-            { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance." },
-            { "name": "action", "type": "String", "description": "The action that was being attempted when the exception occurred." },
-            { "name": "exception", "type": "Exception", "description": "The caught exception object." }
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "action", "type": "String", "description": "Action being performed." },
+            { "name": "exception", "type": "Exception", "description": "Caught exception." }
           ]
         }
       ]
     },
     {
-      "className": "Navigation",
-      "filePath": "utils/Navigation.java",
+      "className": "ExceptionUtils",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/ExceptionUtils.java",
+      "type": "Static Utility",
+      "description": "Exception helpers to ensure TaskInterruptedException propagates correctly.",
+      "methods": [
+        {
+          "name": "rethrowIfTaskInterrupted",
+          "description": "Rethrows TaskInterruptedException if present in the cause chain.",
+          "parameters": [
+            { "name": "t", "type": "Throwable", "description": "Caught throwable." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "DebugDrawer",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/DebugDrawer.java",
+      "type": "Static Utility",
+      "description": "Draws debug markers on screen for z-offset calibration.",
+      "methods": [
+        {
+          "name": "drawZOffsetMarker",
+          "description": "Draws a 3x3 marker at a projected tile point for a given z-offset.",
+          "parameters": [
+            { "name": "script", "type": "com.osmb.api.script.Script", "description": "Calling script instance." },
+            { "name": "zOffset", "type": "int", "description": "Z offset to test." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "JorkBank",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/JorkBank.java",
       "type": "Instance-based Utility",
-      "description": "Handles all generic player movement, including pathfinding and dynamic obstacle handling. An instance of this class should be created in the script's constructor.",
+      "description": "Banking helper with verified open/deposit/withdraw operations and explicit result enums.",
       "constructor": {
-        "description": "Creates a new Navigation instance tied to a specific script.",
+        "description": "Creates a new JorkBank tied to a script.",
         "parameters": [
-          { "name": "script", "type": "com.osmb.api.script.Script", "description": "The script instance this navigator will control (use 'this')." }
+          { "name": "script", "type": "com.osmb.api.script.Script", "description": "Script instance." }
+        ]
+      },
+      "enums": [
+        "OpenResult",
+        "TransactionResult"
+      ],
+      "methods": [
+        {
+          "name": "open",
+          "description": "Opens nearest bank; optionally accepts a custom object filter.",
+          "overloads": [
+            "open()",
+            "open(Predicate<RSObject> customFilter)"
+          ]
+        },
+        {
+          "name": "close",
+          "description": "Closes bank interface if open."
+        },
+        {
+          "name": "deposit",
+          "description": "Deposits items by id (amount or all).",
+          "overloads": [
+            "deposit(int itemId)",
+            "deposit(int itemId, int amount)"
+          ]
+        },
+        {
+          "name": "depositAllExcept",
+          "description": "Deposits all inventory items except listed IDs.",
+          "overloads": [
+            "depositAllExcept(int... keepItemIds)",
+            "depositAllExcept(Set<Integer> keepItemIds)"
+          ]
+        },
+        {
+          "name": "withdraw",
+          "description": "Withdraws items from bank into inventory.",
+          "overloads": [
+            "withdraw(int itemId)",
+            "withdraw(int itemId, int amount)",
+            "withdrawAll(int itemId)"
+          ]
+        },
+        {
+          "name": "contains",
+          "description": "Checks bank for item count.",
+          "overloads": [
+            "contains(int itemId)",
+            "contains(int itemId, int minAmount)"
+          ]
+        },
+        {
+          "name": "getCount",
+          "description": "Gets the count of a specific item in the bank."
+        },
+        {
+          "name": "isBankNearby",
+          "description": "Detects reachable bank objects within distance."
+        }
+      ]
+    },
+    {
+      "className": "Navigation",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/Navigation.java",
+      "type": "Instance-based Utility",
+      "description": "Navigation helper that wraps walking, obstacle handling, and short-range screen taps.",
+      "constructor": {
+        "description": "Creates a new Navigation instance tied to a script.",
+        "parameters": [
+          { "name": "script", "type": "com.osmb.api.script.Script", "description": "Script instance." }
         ]
       },
       "components": [
         {
           "name": "Obstacle",
           "type": "Interface",
-          "description": "A contract for defining script-specific obstacles (e.g., doors, stairs, ladders) that the navigator can handle dynamically.",
+          "description": "Defines script-specific obstacles that should be handled while walking.",
           "methods": [
-            { "name": "getArea", "returns": "com.osmb.api.location.area.Area", "description": "Returns the area where the obstacle is located and should be handled." },
-            { "name": "needsHandling", "returns": "boolean", "description": "Logic to determine if the obstacle currently needs to be interacted with (e.g., is a door closed?)." },
-            { "name": "handle", "returns": "boolean", "description": "The specific logic to interact with the obstacle (e.g., click 'Open' on a door)." }
+            { "name": "getArea", "returns": "com.osmb.api.location.area.Area", "description": "Area of the obstacle." },
+            { "name": "needsHandling", "returns": "boolean", "description": "Whether the obstacle needs interaction." },
+            { "name": "handle", "returns": "boolean", "description": "Performs the interaction." }
           ]
         }
       ],
       "methods": [
         {
           "name": "navigateTo",
-          "description": "The core navigation method. Directs the player to a destination, automatically handling defined obstacles and supporting custom walk configurations.",
+          "description": "Navigates to an area using optional WalkConfig, obstacles, and break conditions.",
           "overloads": [
-            {
-              "signature": "navigateTo(Area destination, List<Obstacle> obstacles, BooleanSupplier breakCondition, int timeout, WalkConfig.Builder builder)",
-              "description": "The most flexible navigation method, combining custom settings with automated obstacle handling."
-            },
-            {
-              "signature": "navigateTo(Area destination, List<Obstacle> obstacles)",
-              "description": "Convenience method. Navigates with specified obstacles using a default timeout and walk behavior."
-            },
-            {
-              "signature": "navigateTo(Area destination)",
-              "description": "The simplest method. Navigates directly to a destination with no special obstacles, using default timeout and walk behavior."
-            },
-            {
-              "signature": "navigateTo(Area destination, WalkConfig config)",
-              "description": "Navigates to a destination using a fully pre-built and customized WalkConfig."
-            }
+            "navigateTo(Area destination)",
+            "navigateTo(Area destination, WalkConfig config)",
+            "navigateTo(Area destination, List<Obstacle> obstacles)",
+            "navigateTo(Area destination, List<Obstacle> obstacles, BooleanSupplier breakCondition, int timeout, WalkConfig.Builder builder)"
+          ]
+        },
+        {
+          "name": "simpleMoveTo",
+          "description": "Short-range movement via screen tap with walker fallback.",
+          "overloads": [
+            "simpleMoveTo(WorldPosition targetPosition)",
+            "simpleMoveTo(WorldPosition targetPosition, int timeout)",
+            "simpleMoveTo(WorldPosition targetPosition, int timeout, int tolerance)"
           ]
         }
       ]
+    },
+    {
+      "className": "JorkTaps",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/JorkTaps.java",
+      "type": "Static Utility",
+      "description": "Tap spamming helpers for shapes, areas, and world positions with optional human delay.",
+      "methods": [
+        {
+          "name": "spamTap",
+          "description": "Repeatedly taps a screen-space shape until condition or max taps.",
+          "overloads": [
+            "spamTap(Script script, Shape shape, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition)",
+            "spamTap(Script script, Shape shape, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition, boolean human)"
+          ]
+        },
+        {
+          "name": "spamTapArea",
+          "description": "Repeatedly taps a world-space RectangleArea.",
+          "overloads": [
+            "spamTapArea(Script script, RectangleArea area, int cubeHeight, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition)",
+            "spamTapArea(Script script, RectangleArea area, int cubeHeight, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition, boolean human)"
+          ]
+        },
+        {
+          "name": "spamTapPosition",
+          "description": "Repeatedly taps a world position projected to screen.",
+          "overloads": [
+            "spamTapPosition(Script script, WorldPosition position, int cubeHeight, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition)",
+            "spamTapPosition(Script script, WorldPosition position, int cubeHeight, int minDelayMs, int maxDelayMs, int maxTaps, BooleanSupplier condition, boolean human)"
+          ]
+        },
+        {
+          "name": "convertAreaToPolygon",
+          "description": "Projects a RectangleArea to a screen-space polygon."
+        },
+        {
+          "name": "convertPositionToPolygon",
+          "description": "Projects a WorldPosition to a screen-space polygon."
+        }
+      ]
+    },
+    {
+      "className": "TilePickerPanel",
+      "package": "com.jork.utils",
+      "filePath": "utils/src/com/jork/utils/TilePickerPanel.java",
+      "type": "Static Utility",
+      "description": "Simple JavaFX panel to select a single tile on screen.",
+      "methods": [
+        {
+          "name": "show",
+          "description": "Shows the panel and returns the selected WorldPosition.",
+          "parameters": [
+            { "name": "core", "type": "com.osmb.api.ScriptCore", "description": "Script core instance." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "EnhancedTilePickerPanel",
+      "package": "com.jork.utils.tilepicker",
+      "filePath": "utils/src/com/jork/utils/tilepicker/EnhancedTilePickerPanel.java",
+      "type": "UI Utility",
+      "description": "Multi-select tile picker with optional categories and builder configuration.",
+      "methods": [
+        {
+          "name": "show",
+          "description": "Backwards-compatible single tile selection.",
+          "parameters": [
+            { "name": "core", "type": "com.osmb.api.ScriptCore", "description": "Script core instance." }
+          ]
+        },
+        {
+          "name": "showMultiple",
+          "description": "Multi-select without categories, returns list of positions.",
+          "parameters": [
+            { "name": "core", "type": "com.osmb.api.ScriptCore", "description": "Script core instance." }
+          ]
+        },
+        {
+          "name": "showWithCategories",
+          "description": "Multi-select with categories, returns map of category id to positions.",
+          "parameters": [
+            { "name": "core", "type": "com.osmb.api.ScriptCore", "description": "Script core instance." },
+            { "name": "categories", "type": "List<TileCategory>", "description": "Category list." }
+          ]
+        },
+        {
+          "name": "builder",
+          "description": "Builder entrypoint for custom configuration.",
+          "parameters": [
+            { "name": "core", "type": "com.osmb.api.ScriptCore", "description": "Script core instance." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "TileCategory",
+      "package": "com.jork.utils.tilepicker",
+      "filePath": "utils/src/com/jork/utils/tilepicker/TileCategory.java",
+      "type": "Data Class",
+      "description": "Defines a tile category with id, display name, color, and optional selection limit."
+    },
+    {
+      "className": "TileSelection",
+      "package": "com.jork.utils.tilepicker",
+      "filePath": "utils/src/com/jork/utils/tilepicker/TileSelection.java",
+      "type": "Data Class",
+      "description": "Represents a selected tile and its category id."
+    },
+    {
+      "className": "ChatBoxMessage",
+      "package": "com.jork.utils.chat",
+      "filePath": "utils/src/com/jork/utils/chat/ChatBoxMessage.java",
+      "type": "Value Object",
+      "description": "Immutable chatbox message wrapper with matching helpers and timestamp."
+    },
+    {
+      "className": "ChatBoxMessageHandler",
+      "package": "com.jork.utils.chat",
+      "filePath": "utils/src/com/jork/utils/chat/ChatBoxMessageHandler.java",
+      "type": "Functional Interface",
+      "description": "Callback interface for handling chatbox messages."
+    },
+    {
+      "className": "ChatBoxDelay",
+      "package": "com.jork.utils.chat",
+      "filePath": "utils/src/com/jork/utils/chat/ChatBoxDelay.java",
+      "type": "Utility",
+      "description": "Delay helper to avoid false positives when chatbox is obscured or tapped."
+    },
+    {
+      "className": "HandlerRegistration",
+      "package": "com.jork.utils.chat",
+      "filePath": "utils/src/com/jork/utils/chat/HandlerRegistration.java",
+      "type": "Registration Object",
+      "description": "Represents a registered chat handler with naming, trigger counts, and removal."
+    },
+    {
+      "className": "ChatBoxListener",
+      "package": "com.jork.utils.chat",
+      "filePath": "utils/src/com/jork/utils/chat/ChatBoxListener.java",
+      "type": "Instance-based Utility",
+      "description": "Polls chatbox messages and triggers registered handlers with optional tab management.",
+      "constructor": {
+        "description": "Creates a listener for the given script.",
+        "parameters": [
+          { "name": "script", "type": "com.osmb.api.script.Script", "description": "Script instance." }
+        ]
+      },
+      "methods": [
+        {
+          "name": "on",
+          "description": "Registers a handler for matching messages.",
+          "parameters": [
+            { "name": "pattern", "type": "String", "description": "Substring pattern." },
+            { "name": "handler", "type": "ChatBoxMessageHandler", "description": "Callback." }
+          ]
+        },
+        {
+          "name": "onOnce",
+          "description": "Registers a one-time handler.",
+          "parameters": [
+            { "name": "pattern", "type": "String", "description": "Substring pattern." },
+            { "name": "handler", "type": "ChatBoxMessageHandler", "description": "Callback." }
+          ]
+        },
+        {
+          "name": "onTimes",
+          "description": "Registers a handler with a max trigger count.",
+          "parameters": [
+            { "name": "pattern", "type": "String", "description": "Substring pattern." },
+            { "name": "maxTriggers", "type": "int", "description": "Max triggers before auto-remove." },
+            { "name": "handler", "type": "ChatBoxMessageHandler", "description": "Callback." }
+          ]
+        },
+        {
+          "name": "monitorTabs",
+          "description": "Allows monitoring multiple chat tabs.",
+          "parameters": [
+            { "name": "tabs", "type": "ChatboxFilterTab...", "description": "Tabs to monitor." }
+          ]
+        },
+        {
+          "name": "setAutoSwitchToTab",
+          "description": "Auto-switches to a specific chat tab on update.",
+          "parameters": [
+            { "name": "tab", "type": "ChatboxFilterTab", "description": "Tab to force." }
+          ]
+        },
+        {
+          "name": "update",
+          "description": "Processes new chatbox lines and triggers handlers."
+        },
+        {
+          "name": "remove",
+          "description": "Removes a handler by name or reference.",
+          "overloads": [
+            "remove(String name)",
+            "remove(HandlerRegistration registration)"
+          ]
+        }
+      ]
+    },
+    {
+      "className": "AbstractMetricsScript",
+      "package": "com.jork.utils.metrics",
+      "filePath": "utils/src/com/jork/utils/metrics/AbstractMetricsScript.java",
+      "type": "Abstract Base Class",
+      "description": "Base script class that initializes and renders the metrics system.",
+      "methods": [
+        {
+          "name": "registerMetric",
+          "description": "Registers a metric with optional type and format.",
+          "overloads": [
+            "registerMetric(String label, Supplier<Object> valueSupplier)",
+            "registerMetric(String label, Supplier<Object> valueSupplier, MetricType type)",
+            "registerMetric(String label, Supplier<Object> valueSupplier, MetricType type, String format)"
+          ]
+        },
+        {
+          "name": "enableXPTracking",
+          "description": "Enables XP tracking for a skill and sprite id.",
+          "parameters": [
+            { "name": "skill", "type": "com.osmb.api.ui.component.tabs.skill.SkillType", "description": "Skill type." },
+            { "name": "spriteId", "type": "int", "description": "Skill icon sprite id." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "Metric",
+      "package": "com.jork.utils.metrics.core",
+      "filePath": "utils/src/com/jork/utils/metrics/core/Metric.java",
+      "type": "Data Class",
+      "description": "Represents a single tracked metric with formatting and caching."
+    },
+    {
+      "className": "MetricType",
+      "package": "com.jork.utils.metrics.core",
+      "filePath": "utils/src/com/jork/utils/metrics/core/MetricType.java",
+      "type": "Enum",
+      "description": "Supported metric types with formatting and rate behavior." 
+    },
+    {
+      "className": "MetricsTracker",
+      "package": "com.jork.utils.metrics.core",
+      "filePath": "utils/src/com/jork/utils/metrics/core/MetricsTracker.java",
+      "type": "Core Engine",
+      "description": "Tracks, updates, and renders registered metrics.",
+      "methods": [
+        {
+          "name": "register",
+          "description": "Registers a metric by label and supplier.",
+          "overloads": [
+            "register(String label, Supplier<Object> valueSupplier, MetricType type)",
+            "register(String label, Supplier<Object> valueSupplier, MetricType type, String customFormat)",
+            "register(Metric metric)"
+          ]
+        },
+        {
+          "name": "registerRuntimeMetrics",
+          "description": "Registers built-in runtime tracking metrics."
+        },
+        {
+          "name": "registerXPTracking",
+          "description": "Registers XP metrics for a given skill.",
+          "parameters": [
+            { "name": "skill", "type": "com.osmb.api.ui.component.tabs.skill.SkillType", "description": "Skill type." },
+            { "name": "spriteId", "type": "int", "description": "Skill icon sprite id." }
+          ]
+        },
+        {
+          "name": "render",
+          "description": "Renders metrics on the given canvas.",
+          "parameters": [
+            { "name": "canvas", "type": "com.osmb.api.visual.drawing.Canvas", "description": "Canvas to draw on." }
+          ]
+        }
+      ]
+    },
+    {
+      "className": "RuntimeMetricProvider",
+      "package": "com.jork.utils.metrics.providers",
+      "filePath": "utils/src/com/jork/utils/metrics/providers/RuntimeMetricProvider.java",
+      "type": "Provider",
+      "description": "Wraps OSMB Timer to provide runtime values."
+    },
+    {
+      "className": "XPMetricProvider",
+      "package": "com.jork.utils.metrics.providers",
+      "filePath": "utils/src/com/jork/utils/metrics/providers/XPMetricProvider.java",
+      "type": "Provider",
+      "description": "OCR-based XP tracking provider with pause/resume timer and TTL calculations."
+    },
+    {
+      "className": "XPLevelData",
+      "package": "com.jork.utils.metrics.providers",
+      "filePath": "utils/src/com/jork/utils/metrics/providers/XPLevelData.java",
+      "type": "Static Utility",
+      "description": "OSRS XP table utilities for level and progress calculations."
+    },
+    {
+      "className": "MetricsDisplay",
+      "package": "com.jork.utils.metrics.display",
+      "filePath": "utils/src/com/jork/utils/metrics/display/MetricsDisplay.java",
+      "type": "Renderer",
+      "description": "Renders the metrics panel on the game canvas with optional images."
+    },
+    {
+      "className": "MetricsPanelConfig",
+      "package": "com.jork.utils.metrics.display",
+      "filePath": "utils/src/com/jork/utils/metrics/display/MetricsPanelConfig.java",
+      "type": "Configuration",
+      "description": "Configures metrics panel position, style, fonts, and background images."
+    },
+    {
+      "className": "MetricsImageLoader",
+      "package": "com.jork.utils.metrics.display",
+      "filePath": "utils/src/com/jork/utils/metrics/display/MetricsImageLoader.java",
+      "type": "Static Utility",
+      "description": "Loads and resizes PNG images with caching and scale modes."
+    },
+    {
+      "className": "TeleportResult",
+      "package": "com.jork.utils.teleport",
+      "filePath": "utils/src/com/jork/utils/teleport/TeleportResult.java",
+      "type": "Enum",
+      "description": "Outcome values for teleport operations (success, failure, retries)."
+    },
+    {
+      "className": "TeleportDestination",
+      "package": "com.jork.utils.teleport",
+      "filePath": "utils/src/com/jork/utils/teleport/TeleportDestination.java",
+      "type": "Value Object",
+      "description": "Describes a teleport destination using area/region checks and a walk target."
+    },
+    {
+      "className": "TeleportHandler",
+      "package": "com.jork.utils.teleport",
+      "filePath": "utils/src/com/jork/utils/teleport/TeleportHandler.java",
+      "type": "Interface",
+      "description": "Common interface for item, spell, and walking teleport handlers."
+    },
+    {
+      "className": "AbstractTeleportHandler",
+      "package": "com.jork.utils.teleport",
+      "filePath": "utils/src/com/jork/utils/teleport/AbstractTeleportHandler.java",
+      "type": "Abstract Base Class",
+      "description": "Base class for item-based teleports with retries and arrival verification."
+    },
+    {
+      "className": "AbstractSpellTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/AbstractSpellTeleportHandler.java",
+      "type": "Abstract Base Class",
+      "description": "Base class for standard spellbook teleport handlers."
+    },
+    {
+      "className": "TeleportHandlerFactory",
+      "package": "com.jork.utils.teleport",
+      "filePath": "utils/src/com/jork/utils/teleport/TeleportHandlerFactory.java",
+      "type": "Factory",
+      "description": "Factory methods for building teleport handlers and mapping from config names."
+    },
+    {
+      "className": "RingOfDuelingHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/RingOfDuelingHandler.java",
+      "type": "Item Teleport Handler",
+      "description": "Teleports to Castle Wars bank using a Ring of Dueling with charge variants."
+    },
+    {
+      "className": "EctophialHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/EctophialHandler.java",
+      "type": "Item Teleport Handler",
+      "description": "Uses the Ectophial to teleport to the Ectofuntus; checks full vs empty state."
+    },
+    {
+      "className": "DrakansMedallionHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/DrakansMedallionHandler.java",
+      "type": "Item Teleport Handler",
+      "description": "Menu-based teleport handler for Drakan's Medallion destinations."
+    },
+    {
+      "className": "AmuletOfTheEyeHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/AmuletOfTheEyeHandler.java",
+      "type": "Item Teleport Handler",
+      "description": "Teleports to Temple of the Eye using any Amulet of the Eye variant."
+    },
+    {
+      "className": "WalkingHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/WalkingHandler.java",
+      "type": "Walking Handler",
+      "description": "Represents a non-teleport destination that should be walked to by the caller."
+    },
+    {
+      "className": "VarrockTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/VarrockTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Varrock Square."
+    },
+    {
+      "className": "FaladorTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/FaladorTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Falador." 
+    },
+    {
+      "className": "CamelotTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/CamelotTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Camelot." 
+    },
+    {
+      "className": "LumbridgeTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/LumbridgeTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Lumbridge Castle." 
+    },
+    {
+      "className": "ArdougneTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/ArdougneTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to East Ardougne market." 
+    },
+    {
+      "className": "TrollheimTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/TrollheimTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Trollheim." 
+    },
+    {
+      "className": "KourendCastleTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/KourendCastleTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Kourend Castle." 
+    },
+    {
+      "className": "WatchtowerTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/WatchtowerTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Watchtower (Yanille)." 
+    },
+    {
+      "className": "ApeAtollTeleportHandler",
+      "package": "com.jork.utils.teleport.handlers",
+      "filePath": "utils/src/com/jork/utils/teleport/handlers/ApeAtollTeleportHandler.java",
+      "type": "Spell Teleport Handler",
+      "description": "Standard spellbook teleport to Temple of Marimbo (Ape Atoll)." 
     }
   ]
-} 
+}

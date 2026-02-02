@@ -2,76 +2,216 @@
 
 This directory contains reusable utility classes that can be used across multiple scripts.
 
+## Overview
+
+Packages in this module:
+- com.jork.utils (core helpers)
+- com.jork.utils.chat (chatbox monitoring)
+- com.jork.utils.metrics (metrics tracking and display)
+- com.jork.utils.teleport (teleport handlers and destinations)
+- com.jork.utils.tilepicker (tile selection UI)
+
 ## ScriptLogger
 
 A standardized logging utility that provides consistent logging functionality for all scripts.
+Supports global log-level filtering and helper methods for common script events.
 
-### Usage
+Usage:
 
 ```java
-// Import the utility
 import com.jork.utils.ScriptLogger;
 
-// Basic logging methods
-ScriptLogger.info(this, "Your informational message");
-ScriptLogger.warning(this, "Your warning message");
-ScriptLogger.error(this, "Your error message");
-ScriptLogger.debug(this, "Your debug message");
+// Basic logging
+ScriptLogger.info(this, "Hello");
+ScriptLogger.warning(this, "Careful");
+ScriptLogger.error(this, "Failed");
+ScriptLogger.debug(this, "Verbose");
 
-// Specialized logging methods
+// Global log level control
+ScriptLogger.setMinLevel(ScriptLogger.Level.INFO);
+ScriptLogger.setDebugEnabled(true);
+
+// Specialized helpers
 ScriptLogger.actionAttempt(this, "Walking to bank");
-ScriptLogger.actionSuccess(this, "Reached bank successfully");
-ScriptLogger.actionFailure(this, "Failed to reach bank", 1, 3);
-ScriptLogger.navigation(this, "lumbridge bank");
-
-// State change logging
+ScriptLogger.actionSuccess(this, "Reached bank");
+ScriptLogger.actionFailure(this, "Failed to walk", 1, 3);
 ScriptLogger.stateChange(this, oldState, newState, "Inventory full");
-
-// Inventory status logging
 ScriptLogger.inventoryStatus(this, "Fish", fishCount, "Coins", coinCount);
-
-// Script lifecycle logging
-ScriptLogger.startup(this, "1.0", "jork", "Fishing");
-ScriptLogger.shutdown(this, "User stopped script");
 
 // Exception logging
 try {
-    // Some risky operation
+    // risky work
 } catch (Exception e) {
     ScriptLogger.exception(this, "perform risky operation", e);
 }
-
-// Custom logging
-ScriptLogger.custom(this, "TRACE", "Custom trace message");
 ```
 
-### Benefits
+## JorkBank
 
-1. **Consistency**: All scripts use the same logging format
-2. **Maintainability**: Changes to logging behavior only need to be made in one place
-3. **Reusability**: Write once, use in all scripts
-4. **Type Safety**: Method signatures prevent common logging mistakes
-5. **Rich Context**: Automatic class name prefixing and categorization
+A comprehensive banking utility that wraps OSMB's Bank API with safe, verified operations.
+Includes randomized timeouts and clear result enums for open/deposit/withdraw flows.
 
-### Migration from Old Logging
+Key points:
+- Uses `OpenResult` and `TransactionResult` for explicit outcome handling.
+- Designed to work with OSMB's bank tab preference system.
 
-Replace old logging patterns:
+Usage:
 
 ```java
-// Old way
-private void logInfo(String message) {
-    log(CLASS_NAME, "[INFO] " + message);
-}
-logInfo("Some message");
+import com.jork.utils.JorkBank;
 
-// New way
-ScriptLogger.info(this, "Some message");
+JorkBank bank = new JorkBank(this);
+
+if (bank.open() == JorkBank.OpenResult.SUCCESS) {
+    bank.depositAllExcept(ECTOPHIAL, TELEPORT_ITEM);
+    bank.withdraw(BONES, 8);
+    bank.close();
+}
 ```
 
-### Adding New Scripts
+## Navigation
 
-When creating new scripts, simply:
+Generic navigation helper with obstacle handling and a fast screen-tap movement path.
 
-1. Import: `import com.jork.utils.ScriptLogger;`
-2. Use the static methods as shown above
-3. No need to create logging methods in each script class 
+Key features:
+- `navigateTo(...)` overloads for Area + obstacles + custom WalkConfig
+- `simpleMoveTo(...)` for short-range screen-based walking with fallback
+
+Usage:
+
+```java
+import com.jork.utils.Navigation;
+
+Navigation nav = new Navigation(this);
+nav.navigateTo(bankArea);
+
+// Simple local movement (screen-tap if possible)
+nav.simpleMoveTo(targetPos, 5000, 1);
+```
+
+## JorkTaps
+
+Utility for repeated taps against a screen shape, area, or world position.
+Useful for spam interactions with a timeout and optional human delay.
+
+```java
+import com.jork.utils.JorkTaps;
+
+boolean success = JorkTaps.spamTapArea(
+    this,
+    area,
+    100, 150, 400,
+    15,
+    () -> inventory.isFull(),
+    true
+);
+```
+
+## Tile Picker
+
+Interactive tile selection UI.
+
+Classes:
+- `TilePickerPanel` for single tile selection
+- `EnhancedTilePickerPanel` for multi-select and categories
+- `TileCategory` and `TileSelection` for structured results
+
+```java
+import com.jork.utils.tilepicker.EnhancedTilePickerPanel;
+import com.jork.utils.tilepicker.TileCategory;
+
+Map<String, List<WorldPosition>> tiles = EnhancedTilePickerPanel.builder(this)
+    .withCategory("traps", "Trap Tiles", Color.GREEN, 5)
+    .withCategory("bait", "Bait Tiles", Color.ORANGE)
+    .show();
+```
+
+## Chatbox Utilities
+
+Chatbox monitoring utilities with pattern-based handlers and delay management.
+
+Core classes:
+- `ChatBoxListener` registers handlers and polls chatbox lines
+- `ChatBoxMessage` provides matching helpers
+- `HandlerRegistration` supports naming, counts, and removal
+- `ChatBoxDelay` prevents false positives during overlays or taps
+
+```java
+import com.jork.utils.chat.ChatBoxListener;
+
+chatListener = new ChatBoxListener(this)
+    .on("you catch", msg -> fishCaught++)
+    .named("fish-counter")
+    .enableDebugLogging();
+```
+
+## Metrics System
+
+Live metrics panel for scripts, including runtime and XP tracking.
+
+Recommended entrypoint:
+- Extend `AbstractMetricsScript` and register metrics in `onMetricsStart()`
+
+Key components:
+- `MetricsTracker` for registration and rendering
+- `MetricsPanelConfig` for styling and layout
+- `XPMetricProvider` and `RuntimeMetricProvider` for built-in metrics
+
+```java
+public class MyScript extends AbstractMetricsScript {
+    public MyScript(Object core) { super(core); }
+
+    @Override
+    protected void onMetricsStart() {
+        registerMetric("Trips", this::getTrips);
+        enableXPTracking(SkillType.HUNTER, 220);
+    }
+}
+```
+
+## Teleport System
+
+Unified teleport handlers for items, spells, and walking fallbacks.
+
+Core types:
+- `TeleportHandler` interface
+- `AbstractTeleportHandler` for item-based teleports
+- `AbstractSpellTeleportHandler` for spellbook teleports
+- `TeleportDestination` and `TeleportResult`
+- `TeleportHandlerFactory` for ready-made handlers
+
+Spell handlers:
+- `VarrockTeleportHandler`
+- `FaladorTeleportHandler`
+- `CamelotTeleportHandler`
+- `LumbridgeTeleportHandler`
+- `ArdougneTeleportHandler`
+- `TrollheimTeleportHandler`
+- `KourendCastleTeleportHandler`
+- `WatchtowerTeleportHandler`
+- `ApeAtollTeleportHandler`
+
+Item handlers:
+- `RingOfDuelingHandler`
+- `EctophialHandler`
+- `DrakansMedallionHandler`
+- `AmuletOfTheEyeHandler`
+
+Walking handler:
+- `WalkingHandler`
+
+```java
+TeleportHandler handler = TeleportHandlerFactory.createRingOfDuelingHandler(this);
+if (handler.canTeleport()) {
+    TeleportResult result = handler.teleport();
+    if (result.isSuccess()) {
+        WorldPosition target = handler.getDestination().getWalkTarget();
+        getWalker().walkTo(target);
+    }
+}
+```
+
+## Debug and Exceptions
+
+- `DebugDrawer` draws a visible marker for Z-offset calibration
+- `ExceptionUtils` rethrows task-interrupt exceptions to respect OSMB task flow
