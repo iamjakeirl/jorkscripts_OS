@@ -135,12 +135,8 @@ public class CollectTask implements Task {
 
             ProfileManager profileManager = script.getProfileManager();
             if (profileManager != null && profileManager.hasHopProfile()) {
-                boolean hopInitiated = profileManager.forceHop();
-                if (hopInitiated) {
-                    ScriptLogger.info(script, "World hop initiated successfully");
-                } else {
-                    ScriptLogger.warning(script, "Failed to initiate world hop");
-                }
+                profileManager.forceHop();
+                ScriptLogger.info(script, "World hop requested");
             } else {
                 ScriptLogger.warning(script, "No hop profile available - cannot hop");
             }

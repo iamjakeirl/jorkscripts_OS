@@ -49,7 +49,7 @@ jar {
     
     // Exclude other variant classes, keep only AllFeatures
     exclude '**/variants/JorkHunterBirdSnares.class'
-    exclude '**/variants/JorkHunterChinchompas.class'
+    exclude '**/variants/JorkHunterBoxTrapper.class'
     
     // Include default config
     from('src/resources/default-hunting-config.properties') {
@@ -104,7 +104,7 @@ task jarBirdSnares(type: Jar) {
     
     // Exclude other variant classes, keep only BirdSnares
     exclude '**/variants/JorkHunterAllFeatures.class'
-    exclude '**/variants/JorkHunterChinchompas.class'
+    exclude '**/variants/JorkHunterBoxTrapper.class'
     
     // Include bird snares specific config
     from('src/resources/birdsnares-config.properties') {
@@ -135,9 +135,9 @@ task jarBirdSnares(type: Jar) {
     }
 }
 
-// Chinchompas only variant
-task jarChinchompas(type: Jar) {
-    archiveFileName = 'jorkHunter-Chinchompas.jar'
+// Box Trapper variant
+task jarBoxTrapper(type: Jar) {
+    archiveFileName = 'jorkHunter-BoxTrapper.jar'
     destinationDirectory = file('jar/')
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     
@@ -145,7 +145,7 @@ task jarChinchompas(type: Jar) {
         attributes(
                 'Manifest-Version': '1.0',
                 'Created-By': 'jork',
-                'Variant': 'Chinchompas Only'
+                'Variant': 'Box Trapper'
         )
     }
     
@@ -155,12 +155,12 @@ task jarChinchompas(type: Jar) {
     // Include utils classes
     from project(':utils').sourceSets.main.output
     
-    // Exclude other variant classes, keep only Chinchompas
+    // Exclude other variant classes, keep only Box Trapper
     exclude '**/variants/JorkHunterAllFeatures.class'
     exclude '**/variants/JorkHunterBirdSnares.class'
     
-    // Include chinchompas specific config
-    from('src/resources/chinchompas-config.properties') {
+    // Include Box Trapper specific config
+    from('src/resources/boxtrapper-config.properties') {
         into '/'
         rename { 'hunting-config.properties' }
     }
@@ -190,7 +190,7 @@ task jarChinchompas(type: Jar) {
 
 // Task to build all variants
 task buildAllVariants {
-    dependsOn jar, jarBirdSnares, jarChinchompas
+    dependsOn jar, jarBirdSnares, jarBoxTrapper
     doLast {
         println "✅ Built all jorkHunter variants"
     }
