@@ -54,6 +54,7 @@ public class ScriptOptions extends VBox {
     private final CheckBox xpFailsafePauseDuringLogoutCheck;
     private final CheckBox debugLoggingCheck;
     private final CheckBox useAllBonesCheck;
+    private final CheckBox runePouchModeCheck;
     private final Button confirmBtn;
     private final SettingsCallback callback;
 
@@ -162,7 +163,18 @@ public class ScriptOptions extends VBox {
         useAllBonesInfo.setWrapText(true);
         useAllBonesInfo.setPadding(new Insets(0, 0, 0, 20));
 
-        VBox advancedSection = new VBox(8, advancedSectionLabel, debugLoggingCheck, useAllBonesCheck, useAllBonesInfo);
+        // Rune pouch mode toggle
+        runePouchModeCheck = new CheckBox("Enable rune pouch mode");
+        runePouchModeCheck.setStyle(getCheckBoxStyle());
+        runePouchModeCheck.setSelected(false);
+
+        Label runePouchInfo = new Label("Skips rune checks/withdrawals. Requires rune pouch in inventory.");
+        runePouchInfo.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 9px;");
+        runePouchInfo.setWrapText(true);
+        runePouchInfo.setPadding(new Insets(0, 0, 0, 20));
+
+        VBox advancedSection = new VBox(8, advancedSectionLabel, debugLoggingCheck, useAllBonesCheck, useAllBonesInfo,
+            runePouchModeCheck, runePouchInfo);
         advancedSection.setPadding(new Insets(0, 0, 10, 0));
 
         // ── XP Failsafe Settings ────────────────────────────────────
@@ -236,6 +248,7 @@ public class ScriptOptions extends VBox {
             Map<String, Object> options = new HashMap<>();
             options.put("xpFailsafeEnabled", xpFailsafeCheck.isSelected());
             options.put("xpFailsafePauseDuringLogout", xpFailsafePauseDuringLogoutCheck.isSelected());
+            options.put("runePouchModeEnabled", runePouchModeCheck.isSelected());
 
             try {
                 int timeout = Integer.parseInt(xpFailsafeTimeoutInput.getText());
@@ -253,7 +266,8 @@ public class ScriptOptions extends VBox {
                 (Integer) options.get("xpFailsafeTimeout"),
                 xpFailsafePauseDuringLogoutCheck.isSelected(),
                 debugLoggingCheck.isSelected(),
-                useAllBonesCheck.isSelected()
+                useAllBonesCheck.isSelected(),
+                runePouchModeCheck.isSelected()
             );
 
             // Notify via callback

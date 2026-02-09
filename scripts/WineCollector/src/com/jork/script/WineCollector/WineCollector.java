@@ -29,7 +29,7 @@ import com.jork.script.WineCollector.javafx.WineCollectorOptions;
     name = "Wine Collector",
     author = "jork",
     version = 1.0,
-    description = "Collects Eclipse Red wines in Varlamore Hunting Guild",
+    threadUrl = "https://www.reddit.com/r/oldschoolrunescape/comments/1234567890",
     skillCategory = SkillCategory.OTHER
 )
 public class WineCollector extends AbstractMetricsScript {

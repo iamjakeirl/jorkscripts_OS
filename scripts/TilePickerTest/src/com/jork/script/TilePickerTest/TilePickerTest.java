@@ -20,7 +20,7 @@ import java.util.Map;
 @ScriptDefinition(
     author = "Jork",
     name = "Tile Picker Test",
-    description = "Test the enhanced tile picker",
+    threadUrl = "https://www.reddit.com/r/oldschoolrunescape/comments/1234567890",
     skillCategory = SkillCategory.HUNTER , version = 1.0
 )
 public class TilePickerTest extends Script {

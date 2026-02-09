@@ -1,5 +1,6 @@
 package com.jork.script.Ectofuntus.tasks;
 
+import com.jork.script.Ectofuntus.EctofuntusConstants;
 import com.jork.script.Ectofuntus.EctofuntusScript;
 import com.jork.script.Ectofuntus.config.BoneType;
 import com.jork.script.Ectofuntus.config.BankLocation;
@@ -13,6 +14,8 @@ import com.jork.utils.ScriptLogger;
 import com.jork.utils.teleport.TeleportHandler;
 import com.jork.utils.teleport.TeleportHandlerFactory;
 import com.jork.utils.teleport.TeleportResult;
+import com.osmb.api.item.ItemGroupResult;
+import com.osmb.api.utils.RandomUtils;
 import com.osmb.api.location.area.impl.RectangleArea;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.scene.RSObject;
@@ -20,8 +23,9 @@ import com.osmb.api.walker.WalkConfig;
 
 import java.awt.Point;
 import java.util.Collections;
-import java.util.Set;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Handles banking operations for the Ectofuntus script.
@@ -38,6 +42,9 @@ public class BankTask {
     private static final int ECTOPHIAL = 4251;
     private static final int EMPTY_POT = 1931;
     private static final int EMPTY_BUCKET = 1925;
+    private static final int RUNE_POUCH = EctofuntusConstants.RUNE_POUCH;
+    private static final int DIVINE_RUNE_POUCH = EctofuntusConstants.DIVINE_RUNE_POUCH;
+    private static final Set<Integer> RUNE_POUCH_IDS = EctofuntusConstants.RUNE_POUCH_IDS;
 
     // ───────────────────────────────────────────────────────────────────────────
     // State Machine
@@ -47,12 +54,12 @@ public class BankTask {
         OPENING_BANK,
         DEPOSITING_UNWANTED,
         CHECKING_SUPPLIES,
-        WITHDRAWING_ECTOPHIAL,
-        WITHDRAWING_TELEPORT,
-        WITHDRAWING_TELEPORT_RUNES,
-        WITHDRAWING_BONES,
-        WITHDRAWING_POTS,
-        WITHDRAWING_BUCKETS,
+        WITHDRAWING_BONES,          // Custom amount (8) first — sets X quantity
+        WITHDRAWING_POTS,           // Custom amount (8) — X cached, skips dialogue
+        WITHDRAWING_BUCKETS,        // Custom amount (8) — X cached, skips dialogue
+        WITHDRAWING_ECTOPHIAL,      // Standard amount (1) — after X items
+        WITHDRAWING_TELEPORT,       // Standard amount (1)
+        WITHDRAWING_TELEPORT_RUNES, // All
         VERIFYING_INVENTORY,
         COMPLETE
     }
@@ -135,7 +142,7 @@ public class BankTask {
             default:
                 ScriptLogger.error(script.getScript(), "Unknown banking state: " + currentState);
                 currentState = BankingState.TELEPORTING_TO_BANK;
-                return 1000;
+                return 0;
         }
     }
 
@@ -154,7 +161,7 @@ public class BankTask {
             if (config == null) {
                 ScriptLogger.error(script.getScript(), "Config not available for teleport handler");
                 script.stop();
-                return 1000;
+                return 0;
             }
 
             teleportHandler = TeleportHandlerFactory.fromBankLocationName(
@@ -167,7 +174,7 @@ public class BankTask {
                 ScriptLogger.error(script.getScript(), "Could not create teleport handler for: " +
                     config.getBankLocation().getDisplayName());
                 script.stop();
-                return 1000;
+                return 0;
             }
 
             ScriptLogger.info(script.getScript(), "Teleport handler initialized: " + teleportHandler.getName());
@@ -179,13 +186,13 @@ public class BankTask {
             ScriptLogger.info(script.getScript(), "Already at bank location - proceeding to open bank");
             teleportFailCount = 0;
             currentState = BankingState.OPENING_BANK;
-            return 200;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         }
 
         // Route based on handler type:
-        // 1. Item-based teleports (Ring of Dueling, Amulet of the Eye) - use item
-        // 2. Spell-based teleports (Varrock, Falador, Camelot) - cast spell, walk to area, JorkBank finds bank
-        // 3. Walking handlers - just walk (with nearby bank fallback)
+        // 1. Spell-based teleports (Varrock, Falador, Camelot) - cast spell, walk to area, JorkBank finds bank
+        // 2. Walking handlers - just walk (with nearby bank fallback)
 
         if (teleportHandler.requiresItem()) {
             // Item-based teleport
@@ -203,11 +210,12 @@ public class BankTask {
                         ScriptLogger.info(script.getScript(), "Near a bank - opening nearby bank");
                         teleportFailCount = 0;
                         currentState = BankingState.OPENING_BANK;
-                        return 200;
+                        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                        return 0;
                     }
                     ScriptLogger.error(script.getScript(), "Teleport item unavailable: " + result + " - stopping");
                     script.stop();
-                    return 1000;
+                    return 0;
 
                 default:
                     teleportFailCount++;
@@ -215,11 +223,12 @@ public class BankTask {
                         ScriptLogger.error(script.getScript(), "Teleport failed " +
                             MAX_TELEPORT_FAILURES + " times - stopping");
                         script.stop();
-                        return 1000;
+                        return 0;
                     }
                     ScriptLogger.warning(script.getScript(), "Teleport failed (" + result +
                         "), attempt " + teleportFailCount + "/" + MAX_TELEPORT_FAILURES);
-                    return 800;
+                    script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(400, 1500, 800, 200));
+                    return 0;
             }
         } else if (teleportHandler.isSpellBased()) {
             // Spell-based teleport (Varrock, Falador, Camelot)
@@ -243,11 +252,12 @@ public class BankTask {
                         ScriptLogger.info(script.getScript(), "Near a bank - opening nearby bank");
                         teleportFailCount = 0;
                         currentState = BankingState.OPENING_BANK;
-                        return 200;
+                        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                        return 0;
                     }
                     ScriptLogger.error(script.getScript(), "Spell unavailable (wrong spellbook or no runes) - stopping");
                     script.stop();
-                    return 1000;
+                    return 0;
 
                 default:
                     teleportFailCount++;
@@ -255,11 +265,12 @@ public class BankTask {
                         ScriptLogger.error(script.getScript(), "Spell cast failed " +
                             MAX_TELEPORT_FAILURES + " times - stopping");
                         script.stop();
-                        return 1000;
+                        return 0;
                     }
                     ScriptLogger.warning(script.getScript(), "Spell cast failed (" + result +
                         "), attempt " + teleportFailCount + "/" + MAX_TELEPORT_FAILURES);
-                    return 800;
+                    script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(400, 1500, 800, 200));
+                    return 0;
             }
         } else {
             // Walking handler - check for nearby bank fallback first
@@ -267,7 +278,8 @@ public class BankTask {
                 ScriptLogger.info(script.getScript(), "Near a bank - using nearby bank instead of walking to configured location");
                 teleportFailCount = 0;
                 currentState = BankingState.OPENING_BANK;
-                return 200;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                return 0;
             }
 
             // No nearby bank, must walk to configured destination
@@ -284,7 +296,8 @@ public class BankTask {
         if (target == null) {
             ScriptLogger.warning(script.getScript(), "No walk target configured for bank destination");
             currentState = BankingState.OPENING_BANK;
-            return 400;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(200, 700, 350, 80));
+            return 0;
         }
 
         ScriptLogger.navigation(script.getScript(), logMessage);
@@ -302,7 +315,8 @@ public class BankTask {
             ScriptLogger.info(script.getScript(), "Arrived at bank location");
             teleportFailCount = 0;
             currentState = BankingState.OPENING_BANK;
-            return 400;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(200, 700, 350, 80));
+            return 0;
         }
 
         // Walking failed - retry with limit
@@ -311,14 +325,23 @@ public class BankTask {
             ScriptLogger.error(script.getScript(), "Failed to walk to bank after " +
                 MAX_TELEPORT_FAILURES + " attempts - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.warning(script.getScript(), "Walk attempt " + teleportFailCount +
             "/" + MAX_TELEPORT_FAILURES + " incomplete - retrying");
-        return 600;
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+        return 0;
     }
 
+    /**
+     * Walks to Port Phasmatys bank, handling the Energy Barrier obstacle.
+     *
+     * Poll patterns:
+     * - pollFramesUntil for position in bank area after barrier pass -- CORRECT, pure position verification
+     * - pollFramesUntil for position in bank area via obstacle handler -- CORRECT, pure position verification
+     * All banking interactions are delegated to JorkBank utility (which handles its own polls correctly).
+     */
     private int walkToPortPhasmatysBank(String logMessage) {
         ScriptLogger.navigation(script.getScript(), logMessage);
 
@@ -335,9 +358,9 @@ public class BankTask {
                 ScriptLogger.info(script.getScript(), "Passing Port Phasmatys Energy Barrier");
                 boolean interacted = barrier.interact(ENERGY_BARRIER_ACTION);
                 if (interacted) {
-                    script.getScript().pollFramesUntil(
+                    script.pollFramesUntil(
                         () -> PORT_PHASMATYS_BANK_AREA.contains(script.getWorldPosition()),
-                        3000
+                        RandomUtils.uniformRandom(2500, 4000)
                     );
                 }
             }
@@ -370,14 +393,14 @@ public class BankTask {
                         return false;
                     }
 
-                    return script.getScript().pollFramesUntil(
+                    return script.pollFramesUntil(
                         () -> PORT_PHASMATYS_BANK_AREA.contains(script.getWorldPosition()),
-                        3000
+                        RandomUtils.uniformRandom(2500, 4000)
                     );
                 }
             }),
             null,
-            20000,
+            RandomUtils.uniformRandom(18000, 28000),
             configBuilder
         );
 
@@ -385,7 +408,8 @@ public class BankTask {
             ScriptLogger.info(script.getScript(), "Arrived at Port Phasmatys bank");
             teleportFailCount = 0;
             currentState = BankingState.OPENING_BANK;
-            return 400;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(200, 700, 350, 80));
+            return 0;
         }
 
         teleportFailCount++;
@@ -393,12 +417,13 @@ public class BankTask {
             ScriptLogger.error(script.getScript(), "Failed to walk to bank after " +
                 MAX_TELEPORT_FAILURES + " attempts - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.warning(script.getScript(), "Walk attempt " + teleportFailCount +
             "/" + MAX_TELEPORT_FAILURES + " incomplete - retrying");
-        return 600;
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+        return 0;
     }
 
     private RSObject findEnergyBarrier() {
@@ -409,7 +434,10 @@ public class BankTask {
         // Prefer barrier closest to the gate area center (area is just outside the barrier)
         Point gateCenter = PORT_PHASMATYS_BARRIER_AREA.getCenter();
         RSObject inGateArea = script.getObjectManager().getRSObject(obj -> {
-            if (obj.getName() == null || !obj.getName().equals(ENERGY_BARRIER_NAME)) {
+            if (obj.getName() == null || !obj.getName().equalsIgnoreCase(ENERGY_BARRIER_NAME)) {
+                return false;
+            }
+            if (!obj.canReach()) {
                 return false;
             }
             if (!hasAction(obj, ENERGY_BARRIER_ACTION)) {
@@ -428,7 +456,8 @@ public class BankTask {
 
         return script.getObjectManager().getRSObject(obj ->
             obj.getName() != null &&
-                obj.getName().equals(ENERGY_BARRIER_NAME) &&
+                obj.getName().equalsIgnoreCase(ENERGY_BARRIER_NAME) &&
+                obj.canReach() &&
                 hasAction(obj, ENERGY_BARRIER_ACTION)
         );
     }
@@ -460,24 +489,28 @@ public class BankTask {
             case ALREADY_OPEN:
                 ScriptLogger.info(script.getScript(), "Bank is open - depositing unwanted items");
                 currentState = BankingState.DEPOSITING_UNWANTED;
-                return 200;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                return 0;
 
             case NO_BANK_FOUND:
                 ScriptLogger.warning(script.getScript(), "No bank found nearby - re-attempting teleport");
                 currentState = BankingState.TELEPORTING_TO_BANK;
-                return 600;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+                return 0;
 
             case INTERACTION_FAILED:
                 ScriptLogger.warning(script.getScript(), "Bank interaction failed - retrying");
-                return 600;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+                return 0;
 
             case TIMEOUT:
                 ScriptLogger.warning(script.getScript(), "Bank open timeout - retrying");
-                return 800;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(400, 1500, 800, 200));
+                return 0;
 
             default:
                 ScriptLogger.error(script.getScript(), "Unexpected bank open result: " + result);
-                return 1000;
+                return 0;
         }
     }
 
@@ -485,17 +518,19 @@ public class BankTask {
         if (!bank.isOpen()) {
             ScriptLogger.warning(script.getScript(), "Bank closed unexpectedly");
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         EctoConfig config = script.getConfig();
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
-        Set<Integer> requiredItems = teleportHandler != null
+        boolean skipSpellRuneChecks = config.isRunePouchModeEnabled() && isSpellBankTeleport(config);
+        Set<Integer> requiredItems = (!skipSpellRuneChecks && teleportHandler != null)
             ? teleportHandler.getRequiredItemIds()
             : Collections.emptySet();
 
@@ -510,6 +545,9 @@ public class BankTask {
             if (config.getBankLocation().requiresItem()) {
                 totalItems++;
             }
+            if (config.isRunePouchModeEnabled()) {
+                totalItems += RUNE_POUCH_IDS.size();
+            }
 
             keepItems = new int[totalItems];
             int idx = 0;
@@ -521,6 +559,10 @@ public class BankTask {
             }
             for (Integer itemId : requiredItems) {
                 keepItems[idx++] = itemId;
+            }
+            if (config.isRunePouchModeEnabled()) {
+                keepItems[idx++] = RUNE_POUCH;
+                keepItems[idx++] = DIVINE_RUNE_POUCH;
             }
             for (Integer boneId : allBoneIds) {
                 keepItems[idx++] = boneId;
@@ -532,6 +574,9 @@ public class BankTask {
             if (config.getBankLocation().requiresItem()) {
                 totalItems++;
             }
+            if (config.isRunePouchModeEnabled()) {
+                totalItems += RUNE_POUCH_IDS.size();
+            }
             keepItems = new int[totalItems];
             int idx = 0;
             keepItems[idx++] = ECTOPHIAL;
@@ -543,6 +588,10 @@ public class BankTask {
             for (Integer itemId : requiredItems) {
                 keepItems[idx++] = itemId;
             }
+            if (config.isRunePouchModeEnabled()) {
+                keepItems[idx++] = RUNE_POUCH;
+                keepItems[idx++] = DIVINE_RUNE_POUCH;
+            }
             keepItems[idx++] = boneId;
         }
 
@@ -552,11 +601,13 @@ public class BankTask {
         if (result == TransactionResult.SUCCESS) {
             ScriptLogger.info(script.getScript(), "Deposit complete");
             currentState = BankingState.CHECKING_SUPPLIES;
-            return 300;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(150, 600, 250, 70));
+            return 0;
         } else {
             ScriptLogger.warning(script.getScript(), "Deposit result: " + result + " - continuing anyway");
             currentState = BankingState.CHECKING_SUPPLIES;
-            return 400;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(200, 700, 350, 80));
+            return 0;
         }
     }
 
@@ -564,30 +615,15 @@ public class BankTask {
         if (!bank.isOpen()) {
             ScriptLogger.warning(script.getScript(), "Bank closed unexpectedly");
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         EctoConfig config = script.getConfig();
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
-        }
-
-        // Check all required items (inventory OR bank - items may already be in inventory)
-        if (getInventoryCount(ECTOPHIAL) == 0 && !bank.contains(ECTOPHIAL)) {
-            ScriptLogger.error(script.getScript(), "Ectophial not found in inventory or bank - stopping");
-            script.stop();
-            return 1000;
-        }
-
-        if (config.getBankLocation().requiresItem()) {
-            int teleportItemId = config.getBankLocation().getItemId();
-            if (getInventoryCount(teleportItemId) == 0 && !bank.contains(teleportItemId)) {
-                ScriptLogger.error(script.getScript(), "Teleport item not found in inventory or bank - stopping");
-                script.stop();
-                return 1000;
-            }
+            return 0;
         }
 
         if (teleportHandler == null) {
@@ -597,56 +633,124 @@ public class BankTask {
             );
         }
 
+        boolean skipSpellRuneChecks = config.isRunePouchModeEnabled() && isSpellBankTeleport(config);
+        int teleportItemId = -1;
+        Set<Integer> requiredTeleportItems = Collections.emptySet();
+        Set<Integer> inventoryItemIds = new HashSet<>();
+        inventoryItemIds.add(ECTOPHIAL);
+        inventoryItemIds.add(EMPTY_POT);
+        inventoryItemIds.add(EMPTY_BUCKET);
+        if (config.isRunePouchModeEnabled()) {
+            inventoryItemIds.addAll(RUNE_POUCH_IDS);
+        }
+
+        if (config.getBankLocation().requiresItem()) {
+            teleportItemId = config.getBankLocation().getItemId();
+            inventoryItemIds.add(teleportItemId);
+        }
+
         if (teleportHandler != null) {
-            for (Integer itemId : teleportHandler.getRequiredItemIds()) {
-                if (getInventoryCount(itemId) == 0 && !bank.contains(itemId)) {
-                    ScriptLogger.error(script.getScript(),
-                        "Required teleport item not found in inventory or bank (ID: " + itemId + ") - stopping");
-                    script.stop();
-                    return 1000;
-                }
+            Set<Integer> handlerRequiredItems = teleportHandler.getRequiredItemIds();
+            if (!skipSpellRuneChecks && handlerRequiredItems != null) {
+                requiredTeleportItems = handlerRequiredItems;
+                inventoryItemIds.addAll(requiredTeleportItems);
+            }
+        }
+
+        if (config.isUseAllBonesInTab()) {
+            inventoryItemIds.addAll(BoneType.getAllItemIds());
+        } else {
+            inventoryItemIds.add(config.getBoneType().getItemId());
+        }
+
+        ItemGroupResult inventorySnapshot = getInventorySnapshot(inventoryItemIds);
+
+        // Check all required items (inventory OR bank - items may already be in inventory)
+        if (getSnapshotAmount(inventorySnapshot, ECTOPHIAL) == 0 && !bank.contains(ECTOPHIAL)) {
+            ScriptLogger.error(script.getScript(), "Ectophial not found in inventory or bank - stopping");
+            script.stop();
+            return 0;
+        }
+
+        if (teleportItemId > 0 && getSnapshotAmount(inventorySnapshot, teleportItemId) == 0 && !bank.contains(teleportItemId)) {
+            ScriptLogger.error(script.getScript(), "Teleport item not found in inventory or bank - stopping");
+            script.stop();
+            return 0;
+        }
+
+        if (config.isRunePouchModeEnabled() && !hasRunePouchInSnapshot(inventorySnapshot)) {
+            ScriptLogger.error(script.getScript(),
+                "Rune pouch mode enabled but no rune pouch in inventory - stopping");
+            script.stop();
+            return 0;
+        }
+
+        for (Integer itemId : requiredTeleportItems) {
+            if (getSnapshotAmount(inventorySnapshot, itemId) == 0 && !bank.contains(itemId)) {
+                ScriptLogger.error(script.getScript(),
+                    "Required teleport item not found in inventory or bank (ID: " + itemId + ") - stopping");
+                script.stop();
+                return 0;
             }
         }
 
         // Check bones - use mixed mode helper (check inventory + bank)
-        if (!hasAnyBonesAvailable()) {
+        boolean hasBonesAvailable;
+        if (config.isUseAllBonesInTab()) {
+            int inventoryBones = getSnapshotAmount(inventorySnapshot, BoneType.getAllItemIds());
+            boolean bankHasBones = false;
+            for (Integer boneId : BoneType.getAllItemIds()) {
+                if (bank.contains(boneId)) {
+                    bankHasBones = true;
+                    break;
+                }
+            }
+            hasBonesAvailable = inventoryBones > 0 || bankHasBones;
+        } else {
+            int configuredBoneId = config.getBoneType().getItemId();
+            hasBonesAvailable = getSnapshotAmount(inventorySnapshot, configuredBoneId) > 0 || bank.contains(configuredBoneId);
+        }
+
+        if (!hasBonesAvailable) {
             if (config.isUseAllBonesInTab()) {
                 ScriptLogger.error(script.getScript(), "No bone types found in inventory or bank - stopping");
             } else {
                 ScriptLogger.error(script.getScript(), "No " + config.getBoneType().getDisplayName() + " found in inventory or bank - stopping");
             }
             script.stop();
-            return 1000;
+            return 0;
         }
 
-        if (getInventoryCount(EMPTY_POT) == 0 && !bank.contains(EMPTY_POT)) {
+        if (getSnapshotAmount(inventorySnapshot, EMPTY_POT) == 0 && !bank.contains(EMPTY_POT)) {
             ScriptLogger.error(script.getScript(), "Empty pots not found in inventory or bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
-        if (getInventoryCount(EMPTY_BUCKET) == 0 && !bank.contains(EMPTY_BUCKET)) {
+        if (getSnapshotAmount(inventorySnapshot, EMPTY_BUCKET) == 0 && !bank.contains(EMPTY_BUCKET)) {
             ScriptLogger.error(script.getScript(), "Empty buckets not found in inventory or bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.info(script.getScript(), "Supply check passed - withdrawing items");
-        currentState = BankingState.WITHDRAWING_ECTOPHIAL;
-        return 200;
+        currentState = BankingState.WITHDRAWING_BONES;
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+        return 0;
     }
 
     private int handleWithdrawEctophial() {
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
-        // Only withdraw if we don't have it
+        // Already have it - skip immediately
         if (getInventoryCount(ECTOPHIAL) > 0) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_TELEPORT;
-            return 100;
+            return 0;
         }
 
         TransactionResult result = bank.withdraw(ECTOPHIAL, 1);
@@ -654,11 +758,12 @@ public class BankTask {
         if (result == TransactionResult.SUCCESS) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_TELEPORT;
-            return 200;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         } else if (result == TransactionResult.ITEM_NOT_FOUND) {
             ScriptLogger.error(script.getScript(), "Ectophial not found in bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         } else {
             return handleWithdrawRetry("Ectophial", ECTOPHIAL);
         }
@@ -669,28 +774,30 @@ public class BankTask {
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         // Skip if teleport not required for this banking method
         if (!config.getBankLocation().requiresItem()) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_TELEPORT_RUNES;
-            return 100;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         }
 
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         int teleportId = config.getBankLocation().getItemId();
 
-        // Only withdraw if we don't have it
+        // Already have it - skip immediately
         if (getInventoryCount(teleportId) > 0) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_TELEPORT_RUNES;
-            return 100;
+            return 0;
         }
 
         TransactionResult result = bank.withdraw(teleportId, 1);
@@ -698,11 +805,12 @@ public class BankTask {
         if (result == TransactionResult.SUCCESS) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_TELEPORT_RUNES;
-            return 200;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         } else if (result == TransactionResult.ITEM_NOT_FOUND) {
             ScriptLogger.error(script.getScript(), "Teleport item (" + config.getBankLocation().getDisplayName() + ") not found - stopping");
             script.stop();
-            return 1000;
+            return 0;
         } else {
             return handleWithdrawRetry("Teleport item", teleportId);
         }
@@ -711,14 +819,15 @@ public class BankTask {
     private int handleWithdrawTeleportRunes() {
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         EctoConfig config = script.getConfig();
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         if (teleportHandler == null) {
@@ -731,17 +840,31 @@ public class BankTask {
         if (teleportHandler == null) {
             ScriptLogger.error(script.getScript(), "Teleport handler not available for rune withdraw");
             script.stop();
-            return 1000;
+            return 0;
+        }
+
+        if (config.isRunePouchModeEnabled() && isSpellBankTeleport(config)) {
+            if (!hasRunePouchInInventory()) {
+                ScriptLogger.error(script.getScript(),
+                    "Rune pouch mode enabled but no rune pouch in inventory - stopping");
+                script.stop();
+                return 0;
+            }
+            ScriptLogger.info(script.getScript(), "Rune pouch mode enabled - skipping teleport rune withdrawal");
+            resetRetryCount();
+            currentState = BankingState.VERIFYING_INVENTORY;
+            return 0;
         }
 
         Set<Integer> requiredItems = teleportHandler.getRequiredItemIds();
         if (requiredItems.isEmpty()) {
             resetRetryCount();
-            currentState = BankingState.WITHDRAWING_BONES;
-            return 100;
+            currentState = BankingState.VERIFYING_INVENTORY;
+            return 0;
         }
 
         for (Integer itemId : requiredItems) {
+            // Already have this rune - skip to next
             if (getInventoryCount(itemId) > 0) {
                 continue;
             }
@@ -749,32 +872,35 @@ public class BankTask {
             TransactionResult result = bank.withdrawAll(itemId);
             if (result == TransactionResult.SUCCESS) {
                 resetRetryCount();
-                return 200;  // Continue withdrawing other runes next tick
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                return 0;  // Continue withdrawing other runes next tick
             } else if (result == TransactionResult.ITEM_NOT_FOUND) {
                 ScriptLogger.error(script.getScript(), "Required teleport item not found in bank (ID: " + itemId + ") - stopping");
                 script.stop();
-                return 1000;
+                return 0;
             } else {
                 return handleWithdrawRetry("Teleport item", itemId);
             }
         }
 
+        // All runes already in inventory - skip immediately
         resetRetryCount();
-        currentState = BankingState.WITHDRAWING_BONES;
-        return 100;
+        currentState = BankingState.VERIFYING_INVENTORY;
+        return 0;
     }
 
     private int handleWithdrawBones() {
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         EctoConfig config = script.getConfig();
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         int targetCount = getSuppliesPerType();
@@ -783,7 +909,8 @@ public class BankTask {
         if (currentCount >= targetCount) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_POTS;
-            return 100;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         }
 
         // Find available bone type
@@ -791,7 +918,7 @@ public class BankTask {
         if (boneId == -1) {
             ScriptLogger.error(script.getScript(), "No bones available in bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         int needed = targetCount - currentCount;
@@ -805,20 +932,23 @@ public class BankTask {
             if (newCount < targetCount && config.isUseAllBonesInTab()) {
                 // Keep withdrawing from other bone types
                 ScriptLogger.debug(script.getScript(), "Got " + newCount + "/" + targetCount + " bones, trying more types");
-                return 200;  // Loop back for more
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                return 0;  // Loop back for more
             }
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_POTS;
-            return 200;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         } else if (result == TransactionResult.ITEM_NOT_FOUND) {
             if (config.isUseAllBonesInTab()) {
                 // In mixed mode, try the next bone type
                 ScriptLogger.debug(script.getScript(), "Bone type " + boneId + " not found, trying next");
-                return 200;  // Will find next bone type on retry
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+                return 0;  // Will find next bone type on retry
             }
             ScriptLogger.error(script.getScript(), "Bones (" + config.getBoneType().getDisplayName() + ") not found in bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         } else {
             return handleWithdrawRetry("Bones", boneId);
         }
@@ -827,7 +957,8 @@ public class BankTask {
     private int handleWithdrawPots() {
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         int targetCount = getSuppliesPerType();
@@ -836,7 +967,8 @@ public class BankTask {
         if (currentCount >= targetCount) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_BUCKETS;
-            return 100;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         }
 
         int needed = targetCount - currentCount;
@@ -847,11 +979,12 @@ public class BankTask {
         if (result == TransactionResult.SUCCESS) {
             resetRetryCount();
             currentState = BankingState.WITHDRAWING_BUCKETS;
-            return 200;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         } else if (result == TransactionResult.ITEM_NOT_FOUND) {
             ScriptLogger.error(script.getScript(), "Empty pots not found in bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         } else {
             return handleWithdrawRetry("Empty pots", EMPTY_POT);
         }
@@ -860,7 +993,8 @@ public class BankTask {
     private int handleWithdrawBuckets() {
         if (!bank.isOpen()) {
             currentState = BankingState.OPENING_BANK;
-            return 600;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+            return 0;
         }
 
         int targetCount = getSuppliesPerType();
@@ -868,8 +1002,9 @@ public class BankTask {
 
         if (currentCount >= targetCount) {
             resetRetryCount();
-            currentState = BankingState.VERIFYING_INVENTORY;
-            return 100;
+            currentState = BankingState.WITHDRAWING_ECTOPHIAL;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         }
 
         int needed = targetCount - currentCount;
@@ -879,12 +1014,13 @@ public class BankTask {
 
         if (result == TransactionResult.SUCCESS) {
             resetRetryCount();
-            currentState = BankingState.VERIFYING_INVENTORY;
-            return 200;
+            currentState = BankingState.WITHDRAWING_ECTOPHIAL;
+            script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+            return 0;
         } else if (result == TransactionResult.ITEM_NOT_FOUND) {
             ScriptLogger.error(script.getScript(), "Empty buckets not found in bank - stopping");
             script.stop();
-            return 1000;
+            return 0;
         } else {
             return handleWithdrawRetry("Empty buckets", EMPTY_BUCKET);
         }
@@ -895,7 +1031,7 @@ public class BankTask {
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         int targetCount = getSuppliesPerType();
@@ -905,10 +1041,18 @@ public class BankTask {
         int finalPots = getInventoryCount(EMPTY_POT);
         int finalBuckets = getInventoryCount(EMPTY_BUCKET);
         int ectophialCount = getInventoryCount(ECTOPHIAL);
+        int runePouchCount = getInventoryCount(RUNE_POUCH) + getInventoryCount(DIVINE_RUNE_POUCH);
 
         ScriptLogger.info(script.getScript(), String.format(
-            "Inventory: Bones=%d/%d, Pots=%d/%d, Buckets=%d/%d, Ectophial=%d",
-            finalBones, targetCount, finalPots, targetCount, finalBuckets, targetCount, ectophialCount));
+            "Inventory: Bones=%d/%d, Pots=%d/%d, Buckets=%d/%d, Ectophial=%d, RunePouch=%d",
+            finalBones, targetCount, finalPots, targetCount, finalBuckets, targetCount, ectophialCount, runePouchCount));
+
+        if (config.isRunePouchModeEnabled() && runePouchCount == 0) {
+            ScriptLogger.error(script.getScript(),
+                "Rune pouch mode enabled but no rune pouch in inventory - stopping");
+            script.stop();
+            return 0;
+        }
 
         boolean verified = (finalBones >= targetCount &&
                            finalPots >= targetCount &&
@@ -918,12 +1062,13 @@ public class BankTask {
         if (!verified) {
             ScriptLogger.error(script.getScript(), "Inventory verification failed - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.info(script.getScript(), "Inventory verification successful");
         currentState = BankingState.COMPLETE;
-        return 200;
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(100, 500, 200, 60));
+        return 0;
     }
 
     private int handleComplete() {
@@ -945,12 +1090,34 @@ public class BankTask {
         teleportFailCount = 0;
 
         ScriptLogger.info(script.getScript(), "Banking complete - ready for Ectofuntus");
-        return 600;
+        script.pollFramesUntil(() -> false, RandomUtils.exponentialRandom(300, 500, 1500));
+        return 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Helper Methods
     // ═══════════════════════════════════════════════════════════════════════════
+
+    private boolean isSpellBankTeleport(EctoConfig config) {
+        if (teleportHandler != null) {
+            return teleportHandler.isSpellBased();
+        }
+        if (config == null) {
+            return false;
+        }
+        return config.getBankLocation() == BankLocation.VARROCK ||
+            config.getBankLocation() == BankLocation.FALADOR ||
+            config.getBankLocation() == BankLocation.CAMELOT;
+    }
+
+    private boolean hasRunePouchInInventory() {
+        return getInventoryCount(RUNE_POUCH) > 0 || getInventoryCount(DIVINE_RUNE_POUCH) > 0;
+    }
+
+    private boolean hasRunePouchInSnapshot(ItemGroupResult snapshot) {
+        return getSnapshotAmount(snapshot, RUNE_POUCH) > 0 ||
+            getSnapshotAmount(snapshot, DIVINE_RUNE_POUCH) > 0;
+    }
 
     /**
      * Gets total bone count in inventory based on config mode.
@@ -1047,15 +1214,10 @@ public class BankTask {
 
     /**
      * Calculates how many of each supply type to withdraw.
-     * MVP: Always returns 8 (conservative)
-     * Phase 2: Returns 9 when teleport is wearable
+     * Ectofuntus always uses 8 supplies per type.
      */
     private int getSuppliesPerType() {
-        EctoConfig config = script.getConfig();
-        if (config != null && config.getBankLocation().isWearable()) {
-            return 9;  // Ring worn = extra inventory slot
-        }
-        return 8;  // Default for non-wearable teleports
+        return 8;
     }
 
     /**
@@ -1075,6 +1237,28 @@ public class BankTask {
             ScriptLogger.debug(script.getScript(), "Error counting item " + itemId + ": " + e.getMessage());
             return 0;
         }
+    }
+
+    private ItemGroupResult getInventorySnapshot(Set<Integer> itemIds) {
+        try {
+            var wm = script.getWidgetManager();
+            if (wm == null || wm.getInventory() == null || itemIds == null || itemIds.isEmpty()) {
+                return null;
+            }
+            return wm.getInventory().search(itemIds);
+        } catch (Exception e) {
+            ExceptionUtils.rethrowIfTaskInterrupted(e);
+            ScriptLogger.debug(script.getScript(), "Error taking inventory snapshot: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private int getSnapshotAmount(ItemGroupResult snapshot, int itemId) {
+        return snapshot != null ? snapshot.getAmount(itemId) : 0;
+    }
+
+    private int getSnapshotAmount(ItemGroupResult snapshot, Set<Integer> itemIds) {
+        return snapshot != null ? snapshot.getAmount(itemIds) : 0;
     }
 
     /**
@@ -1129,23 +1313,25 @@ public class BankTask {
                 ScriptLogger.info(script.getScript(), "Bank closed during retries - reopening");
                 resetRetryCount();
                 currentState = BankingState.OPENING_BANK;
-                return 600;
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+                return 0;
             }
 
             // Check 2: Does the item still exist in bank?
             if (!bank.contains(itemId)) {
                 ScriptLogger.error(script.getScript(), itemName + " (ID: " + itemId + ") not found in bank after retries - stopping");
                 script.stop();
-                return 1000;
+                return 0;
             }
 
             // Bank is open and item exists - something else is wrong
             ScriptLogger.error(script.getScript(), itemName + " withdraw keeps failing despite bank open and item present - stopping");
             script.stop();
-            return 1000;
+            return 0;
         }
 
-        return 600;
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 1200, 600, 150));
+        return 0;
     }
 
     /**

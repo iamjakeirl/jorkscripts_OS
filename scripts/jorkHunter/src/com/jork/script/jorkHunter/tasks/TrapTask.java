@@ -70,6 +70,14 @@ public class TrapTask extends AbstractHuntingTask {
     }
 
     @Override
+    public void resetExecutionState() {
+        committedToLayingTrap = false;
+        committedTrapPosition = null;
+        trapLayingStartPosition = null;
+        trapLayingStartTime = 0;
+    }
+
+    @Override
     public boolean canExecute() {
         return true; 
     }

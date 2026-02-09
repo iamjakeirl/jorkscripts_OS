@@ -150,9 +150,6 @@ public class EctophialHandler extends AbstractTeleportHandler {
             return TeleportResult.INTERACTION_FAILED;
         }
 
-        // Wait for teleport animation to start
-        waitForTeleportAnimation();
-
         // Verify arrival at Ectofuntus
         if (verifyArrival()) {
             ScriptLogger.debug(script, "Successfully teleported to Ectofuntus");

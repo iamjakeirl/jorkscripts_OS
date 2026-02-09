@@ -16,9 +16,9 @@ import com.osmb.api.location.area.impl.RectangleArea;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.scene.RSObject;
 import com.osmb.api.shape.Polygon;
+import com.osmb.api.utils.RandomUtils;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Handles slime collection in the basement of the Ectofuntus.
@@ -101,7 +101,7 @@ public class CollectSlimeTask {
             default:
                 ScriptLogger.error(script.getScript(), "Unknown CollectSlimeTask state: " + currentState);
                 currentState = State.CHECK_LOCATION;
-                return 1000;
+                return 0;
         }
     }
 
@@ -128,20 +128,20 @@ public class CollectSlimeTask {
             if (EctofuntusConstants.isInSlimeDungeon(pos) && isNearPool(pos)) {
                 ScriptLogger.info(script.getScript(), "Already in basement near pool - continuing");
                 currentState = State.FILL_BUCKETS;
-                return randomDelay(200, 400);
+                return 0;
             }
         }
 
         // Not at correct location - ensure we're at altar start
         if (!ensureNearAltarStart()) {
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Re-fetch position after potential teleport
         pos = script.getWorldPosition();
         if (pos == null) {
             ScriptLogger.warning(script.getScript(), "Position unavailable");
-            return 1000;
+            return 0;
         }
 
         int currentPlane = pos.getPlane();
@@ -153,11 +153,11 @@ public class CollectSlimeTask {
             if (slimeCount > 0) {
                 ScriptLogger.info(script.getScript(), "No empty buckets left, have " + slimeCount + " slime");
                 currentState = State.COMPLETE;
-                return randomDelay(200, 400);
+                return 0;
             }
             ScriptLogger.warning(script.getScript(), "No empty buckets or slime in inventory!");
             script.setShouldBank(true);
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.info(script.getScript(), "Need to fill " + emptyBuckets + " buckets with slime");
@@ -169,25 +169,29 @@ public class CollectSlimeTask {
             currentState = State.NAVIGATE_TO_BASEMENT;
         }
 
-        return randomDelay(200, 400);
+        return 0;
     }
 
     /**
      * Navigates to the basement where the Pool of Slime is located.
      * Attempts agility shortcut first if on tier 1 and player has level 58+ agility.
+     *
+     * Poll patterns:
+     * - pollFramesHuman for position change after shortcut [AUDIT: misclassified, should be pollFramesUntil]
+     * - pollFramesHuman for plane change (in slime dungeon) [AUDIT: misclassified, should be pollFramesUntil]
      */
     private int handleNavigateToBasement() {
         WorldPosition pos = script.getWorldPosition();
         if (pos == null) {
             ScriptLogger.warning(script.getScript(), "Position unavailable");
-            return 1000;
+            return 0;
         }
 
         // Already in basement?
         if (EctofuntusConstants.isInSlimeDungeon(pos)) {
             ScriptLogger.info(script.getScript(), "Arrived in basement");
             currentState = State.FILL_BUCKETS;
-            return randomDelay(300, 500);
+            return 0;
         }
 
         // Try agility shortcut if we're on tier 1 and have required level
@@ -203,13 +207,12 @@ public class CollectSlimeTask {
                     boolean shortcutUsed = script.pollFramesHuman(() -> {
                         WorldPosition newPos = script.getWorldPosition();
                         return newPos != null && !isOnTier1(newPos);
-                    }, EctofuntusConstants.PLANE_CHANGE_TIMEOUT);
+                    }, RandomUtils.uniformRandom(4000, 6000));
 
                     if (shortcutUsed) {
                         ScriptLogger.actionSuccess(script.getScript(), "Shortcut used - skipped tier 1");
                         retryCount = 0;
-                        // Continue navigation (may not be at pool yet)
-                        return randomDelay(400, 700);
+                        return 0;
                     }
                 }
                 // Shortcut failed - fall through to regular stairs
@@ -226,13 +229,13 @@ public class CollectSlimeTask {
 
             if (handleRetryWithEscalation("Finding basement stairs")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(800, 1200);
+            return 0;
         }
 
         boolean interacted;
-        boolean isTrapdoor = EctofuntusConstants.TRAPDOOR_NAME.equals(stairs.getName());
+        boolean isTrapdoor = stairs.getName() != null &&
+            stairs.getName().equalsIgnoreCase(EctofuntusConstants.TRAPDOOR_NAME);
 
         if (isTrapdoor) {
             ScriptLogger.actionAttempt(script.getScript(), "Using trapdoor to basement");
@@ -245,33 +248,33 @@ public class CollectSlimeTask {
         if (!interacted) {
             if (handleRetryWithEscalation("Stair interaction")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Wait for plane change
         boolean planeChanged = script.pollFramesHuman(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return EctofuntusConstants.isInSlimeDungeon(newPos);
-        }, EctofuntusConstants.PLANE_CHANGE_TIMEOUT);
+        }, RandomUtils.uniformRandom(4000, 6000));
 
         if (planeChanged) {
             ScriptLogger.actionSuccess(script.getScript(), "Entered basement");
             retryCount = 0;
             currentState = State.FILL_BUCKETS;
-            return randomDelay(400, 700);
         } else {
             if (handleRetryWithEscalation("Plane change after stairs")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
         }
+        return 0;
     }
 
     /**
      * Fills empty buckets at the Pool of Slime.
+     *
+     * Poll patterns:
+     * - pollFramesHuman for empty bucket count == 0 (slime fill) -- CORRECT, player watches fill
      */
     private int handleFillBuckets() {
         // Find the pool of slime
@@ -283,9 +286,8 @@ public class CollectSlimeTask {
             }
             if (handleRetryWithEscalation("Finding Pool of Slime")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Check if we still have empty buckets
@@ -293,7 +295,7 @@ public class CollectSlimeTask {
         if (emptyBuckets == 0) {
             ScriptLogger.info(script.getScript(), "No more empty buckets - verifying slime");
             currentState = State.VERIFY_SLIME;
-            return randomDelay(200, 400);
+            return 0;
         }
 
         // Find empty bucket in inventory for "use item on object" interaction
@@ -301,7 +303,7 @@ public class CollectSlimeTask {
         if (bucket == null) {
             ScriptLogger.warning(script.getScript(), "No empty bucket found in inventory");
             currentState = State.VERIFY_SLIME;
-            return randomDelay(200, 400);
+            return 0;
         }
 
         ScriptLogger.actionAttempt(script.getScript(), "Using bucket on Pool of Slime (" + emptyBuckets + " buckets)");
@@ -311,13 +313,9 @@ public class CollectSlimeTask {
         if (!selected) {
             if (handleRetryWithEscalation("Selecting empty bucket")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(400, 600);
+            return 0;
         }
-
-        // Small delay for item selection visual
-        script.pollFramesHuman(() -> true, 300);
 
         // Convert slime pool area to screen-space polygon for direct tap
         Polygon poolPolygon = JorkTaps.convertAreaToPolygon(
@@ -330,9 +328,8 @@ public class CollectSlimeTask {
             ScriptLogger.warning(script.getScript(), "Slime pool not visible on screen");
             if (handleRetryWithEscalation("Projecting pool to screen")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Single tap with "Use" action on game screen (avoids UI elements)
@@ -341,35 +338,31 @@ public class CollectSlimeTask {
         if (!usedOnPool) {
             if (handleRetryWithEscalation("Using bucket on pool")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(400, 600);
+            return 0;
         }
 
         // Wait for buckets to be filled (empty bucket count should reach 0)
-        // Variable timeout of 12-14 seconds per design doc
-        int slimeTimeout = EctofuntusConstants.SLIME_FILL_TIMEOUT_MIN +
-            ThreadLocalRandom.current().nextInt(
-                EctofuntusConstants.SLIME_FILL_TIMEOUT_MAX - EctofuntusConstants.SLIME_FILL_TIMEOUT_MIN
-            );
+        // ignoreTasks=true: suppress break/hop/afk during filling
         boolean filled = script.pollFramesHuman(() -> {
             int currentEmpty = getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
             return currentEmpty == 0;
-        }, slimeTimeout);
+        }, RandomUtils.uniformRandom(
+            EctofuntusConstants.SLIME_FILL_TIMEOUT_MIN,
+            EctofuntusConstants.SLIME_FILL_TIMEOUT_MAX
+        ), true);
 
         if (filled) {
             ScriptLogger.actionSuccess(script.getScript(), "Buckets filled with slime");
             script.setHasSlime(true);
             retryCount = 0;
             currentState = State.VERIFY_SLIME;
-            return randomDelay(400, 700);
         } else {
             if (handleRetryWithEscalation("Bucket filling")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
         }
+        return 0;
     }
 
     /**
@@ -386,23 +379,21 @@ public class CollectSlimeTask {
             // All buckets filled successfully
             ScriptLogger.info(script.getScript(), "Successfully collected " + slimeCount + " buckets of slime");
             currentState = State.COMPLETE;
-            return randomDelay(200, 400);
         } else if (emptyBuckets > 0) {
             // Still have empty buckets - try filling again
             ScriptLogger.warning(script.getScript(), "Still have " + emptyBuckets + " empty buckets - retrying fill");
             currentState = State.FILL_BUCKETS;
-            return randomDelay(400, 600);
         } else if (slimeCount == 0) {
             // No slime and no empty buckets - something went wrong
             ScriptLogger.error(script.getScript(), "No slime collected and no empty buckets - banking");
             script.setShouldBank(true);
             reset();
-            return 1000;
+        } else {
+            // Edge case: have some slime but unexpected state
+            currentState = State.COMPLETE;
         }
 
-        // Edge case: have some slime but unexpected state
-        currentState = State.COMPLETE;
-        return randomDelay(200, 400);
+        return 0;
     }
 
     /**
@@ -418,9 +409,15 @@ public class CollectSlimeTask {
         // Reset for next cycle
         reset();
 
-        return randomDelay(300, 500);
+        return 0;
     }
 
+    /**
+     * Ensures the player is near the altar start position via ectophial teleport.
+     *
+     * Poll patterns:
+     * - pollFramesHuman for position change after teleport [AUDIT: debatable, should be pollFramesUntil]
+     */
     private boolean ensureNearAltarStart() {
         WorldPosition startPos = script.getWorldPosition();
         if (startPos != null && EctofuntusConstants.isNearAltar(startPos)) {
@@ -447,12 +444,11 @@ public class CollectSlimeTask {
             return false;
         }
 
-        // Wait for position change (design doc: 500-1000ms timeout)
-        int timeout = 500 + ThreadLocalRandom.current().nextInt(500);
-        boolean posChanged = script.pollFramesHuman(() -> {
+        // Wait for position change - teleport handler already handled visible animation
+        boolean posChanged = script.pollFramesUntil(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && !newPos.equals(startPos);
-        }, timeout);
+        }, RandomUtils.uniformRandom(500, 1000));
 
         if (!posChanged) {
             ScriptLogger.debug(script.getScript(), "Position unchanged after teleport - may still be animating");
@@ -479,7 +475,8 @@ public class CollectSlimeTask {
     private RSObject findPoolOfSlime() {
         return script.getObjectManager().getRSObject(
             obj -> obj.getName() != null &&
-                   obj.getName().equals(EctofuntusConstants.POOL_OF_SLIME_NAME)
+                   obj.getName().equalsIgnoreCase(EctofuntusConstants.POOL_OF_SLIME_NAME) &&
+                   obj.canReach()
         );
     }
 
@@ -524,7 +521,7 @@ public class CollectSlimeTask {
 
     /**
      * Finds the nearest staircase with the specified action.
-     * Uses getObjects() + distance sorting to handle multiple staircases per tier.
+     * Uses getUtils().getClosest() to avoid hand-rolled sorting.
      *
      * @param direction "Climb-down" for descending, "Climb-up" for ascending
      * @return nearest reachable staircase, or null if none found
@@ -540,28 +537,26 @@ public class CollectSlimeTask {
         List<RSObject> trapdoors = script.getObjectManager().getObjects(obj ->
             obj != null &&
             obj.getName() != null &&
-            obj.getName().equals(EctofuntusConstants.TRAPDOOR_NAME) &&
+            obj.getName().equalsIgnoreCase(EctofuntusConstants.TRAPDOOR_NAME) &&
             hasAction(obj, "Open", direction) &&
             obj.canReach()
         );
 
         if (trapdoors != null && !trapdoors.isEmpty()) {
-            // Sort by distance - nearest first
-            trapdoors.sort((a, b) -> Double.compare(
-                a.distance(currentPos),
-                b.distance(currentPos)
-            ));
-            ScriptLogger.debug(script.getScript(), "Found " + trapdoors.size() +
-                " trapdoor(s), using nearest");
-            return trapdoors.get(0);
+            RSObject closestTrapdoor = getClosestObject(trapdoors);
+            if (closestTrapdoor != null) {
+                ScriptLogger.debug(script.getScript(), "Found " + trapdoors.size() +
+                    " trapdoor(s), using nearest");
+                return closestTrapdoor;
+            }
         }
 
         // Try staircases - check both "Stairs" (dungeon) and "Staircase" (altar area)
         List<RSObject> staircases = script.getObjectManager().getObjects(obj ->
             obj != null &&
             obj.getName() != null &&
-            (obj.getName().equals(EctofuntusConstants.STAIRS_NAME) ||
-             obj.getName().equals(EctofuntusConstants.STAIRCASE_NAME)) &&
+            (obj.getName().equalsIgnoreCase(EctofuntusConstants.STAIRS_NAME) ||
+             obj.getName().equalsIgnoreCase(EctofuntusConstants.STAIRCASE_NAME)) &&
             hasAction(obj, direction) &&
             obj.canReach()
         );
@@ -570,17 +565,16 @@ public class CollectSlimeTask {
             return null;
         }
 
-        // Sort by distance - nearest first
-        staircases.sort((a, b) -> Double.compare(
-            a.distance(currentPos),
-            b.distance(currentPos)
-        ));
+        RSObject closestStairs = getClosestObject(staircases);
+        if (closestStairs == null) {
+            return null;
+        }
 
         ScriptLogger.debug(script.getScript(), "Found " + staircases.size() +
             " staircase(s), using nearest (distance: " +
-            String.format("%.1f", staircases.get(0).distance(currentPos)) + ")");
+            String.format("%.1f", closestStairs.distance(currentPos)) + ")");
 
-        return staircases.get(0);
+        return closestStairs;
     }
 
     /**
@@ -702,9 +696,18 @@ public class CollectSlimeTask {
             return null;
         }
 
-        WorldPosition pos = script.getWorldPosition();
-        stairs.sort((a, b) -> Double.compare(a.distance(pos), b.distance(pos)));
-        return stairs.get(0);
+        return getClosestObject(stairs);
+    }
+
+    private RSObject getClosestObject(List<RSObject> objects) {
+        if (objects == null || objects.isEmpty()) {
+            return null;
+        }
+        Object closest = script.getScript().getUtils().getClosest(objects);
+        if (closest instanceof RSObject) {
+            return (RSObject) closest;
+        }
+        return objects.get(0);
     }
 
     private int navigateDownToPool(WorldPosition pos) {
@@ -712,7 +715,7 @@ public class CollectSlimeTask {
         ScriptLogger.debug(script.getScript(), "Slime tier detected: " + tier);
 
         if (tier == SlimeTier.POOL) {
-            return randomDelay(400, 600);
+            return 0;
         }
 
         if (tier == SlimeTier.TIER_1) {
@@ -721,7 +724,11 @@ public class CollectSlimeTask {
                 if (shortcut != null) {
                     ScriptLogger.actionAttempt(script.getScript(), "Using agility shortcut (tier 1 -> tier 2)");
                     if (shortcut.interact(EctofuntusConstants.ACTION_CLIMB)) {
-                        return randomDelay(600, 900);
+                        script.pollFramesHuman(() -> {
+                            WorldPosition newPos = script.getWorldPosition();
+                            return newPos != null && getSlimeTier(newPos) != SlimeTier.TIER_1;
+                        }, RandomUtils.uniformRandom(4000, 6000));
+                        return 0;
                     }
                 }
             }
@@ -729,44 +736,59 @@ public class CollectSlimeTask {
             RSObject stairs = findStairsInArea(EctofuntusConstants.SLIME_TIER1_TO_TIER2_TOP, EctofuntusConstants.ACTION_CLIMB_DOWN);
             if (stairs != null) {
                 ScriptLogger.actionAttempt(script.getScript(), "Climbing down to tier 2");
-                stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
-                return randomDelay(600, 900);
+                if (stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN)) {
+                    script.pollFramesHuman(() -> {
+                        WorldPosition newPos = script.getWorldPosition();
+                        return newPos != null && getSlimeTier(newPos) != SlimeTier.TIER_1;
+                    }, RandomUtils.uniformRandom(4000, 6000));
+                }
+                return 0;
             }
 
             ScriptLogger.navigation(script.getScript(), "Walking toward tier 1 stairs");
             script.getScript().getWalker().walkTo(EctofuntusConstants.SLIME_TIER1_TO_TIER2_TOP.getRandomPosition());
-            return randomDelay(800, 1200);
+            return 0;
         }
 
         if (tier == SlimeTier.TIER_2) {
             RSObject stairs = findStairsInArea(EctofuntusConstants.SLIME_TIER2_TO_TIER3_TOP, EctofuntusConstants.ACTION_CLIMB_DOWN);
             if (stairs != null) {
                 ScriptLogger.actionAttempt(script.getScript(), "Climbing down to tier 3");
-                stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
-                return randomDelay(600, 900);
+                if (stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN)) {
+                    script.pollFramesHuman(() -> {
+                        WorldPosition newPos = script.getWorldPosition();
+                        return newPos != null && getSlimeTier(newPos) != SlimeTier.TIER_2;
+                    }, RandomUtils.uniformRandom(4000, 6000));
+                }
+                return 0;
             }
 
             ScriptLogger.navigation(script.getScript(), "Walking toward tier 2 stairs");
             script.getScript().getWalker().walkTo(EctofuntusConstants.SLIME_TIER2_TO_TIER3_TOP.getRandomPosition());
-            return randomDelay(800, 1200);
+            return 0;
         }
 
         if (tier == SlimeTier.TIER_3) {
             RSObject stairs = findStairsInArea(EctofuntusConstants.SLIME_TIER3_TO_POOL_TOP, EctofuntusConstants.ACTION_CLIMB_DOWN);
             if (stairs != null) {
                 ScriptLogger.actionAttempt(script.getScript(), "Climbing down to pool tier");
-                stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
-                return randomDelay(600, 900);
+                if (stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN)) {
+                    script.pollFramesHuman(() -> {
+                        WorldPosition newPos = script.getWorldPosition();
+                        return newPos != null && getSlimeTier(newPos) != SlimeTier.TIER_3;
+                    }, RandomUtils.uniformRandom(4000, 6000));
+                }
+                return 0;
             }
 
             ScriptLogger.navigation(script.getScript(), "Walking toward pool stairs");
             script.getScript().getWalker().walkTo(EctofuntusConstants.SLIME_TIER3_TO_POOL_TOP.getRandomPosition());
-            return randomDelay(800, 1200);
+            return 0;
         }
 
         ScriptLogger.navigation(script.getScript(), "Walking toward slime dungeon entry");
         script.getScript().getWalker().walkTo(EctofuntusConstants.TIER_1_CENTER);
-        return randomDelay(800, 1200);
+        return 0;
     }
 
     /**
@@ -841,10 +863,4 @@ public class CollectSlimeTask {
         return false; // Can continue
     }
 
-    /**
-     * Generates a random delay between min and max values.
-     */
-    private int randomDelay(int min, int max) {
-        return min + ThreadLocalRandom.current().nextInt(max - min);
-    }
 }

@@ -11,7 +11,7 @@ import com.osmb.api.script.SkillCategory;
     name = "jorkHunter - Box Trapper",
     author = "jork",
     version = 1.0,
-    description = "Automated box trap hunting (chinchompas, jerboas, ferrets).",
+    threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
     skillCategory = SkillCategory.HUNTER
 )
 public class JorkHunterBoxTrapper extends JorkHunter {

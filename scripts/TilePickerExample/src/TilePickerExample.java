@@ -17,7 +17,7 @@ import java.util.Map;
     name = "Tile Picker Example",
     author = "Jork",
     version = 1.0,
-    description = "Demonstrates enhanced tile picker usage",
+    threadUrl = "https://www.reddit.com/r/oldschoolrunescape/comments/1234567890",
     skillCategory = SkillCategory.OTHER
 )
 public class TilePickerExample extends Script {

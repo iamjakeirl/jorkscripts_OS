@@ -6,6 +6,7 @@ import com.jork.script.jorkHunter.tasks.TrapTask;
 import com.jork.script.jorkHunter.state.TrapStateManager;
 
 import com.jork.script.jorkHunter.trap.TrapType;
+import com.jork.script.jorkHunter.utils.tasks.Task;
 import com.jork.script.jorkHunter.utils.tasks.TaskManager;
 import com.jork.script.jorkHunter.utils.placement.TrapPlacementStrategy;
 import com.jork.script.jorkHunter.utils.placement.NoCardinalStrategy;
@@ -341,7 +342,7 @@ public class JorkHunter extends AbstractMetricsScript {
                             ScriptLogger.debug(this, "Tapped hotkey button, waiting for collapse...");
                             
                             // Wait until the popout panel has collapsed (which reveals the hotkeys)
-                            submitTask(() -> {
+                            pollFramesUntil(() -> {
                                 Rectangle boundsPresent = popoutPanelContainer.getBounds();
                                 if (boundsPresent == null) {
                                     return false;
@@ -1078,13 +1079,16 @@ public class JorkHunter extends AbstractMetricsScript {
                 }
             }
             
+            // Reset mid-action execution state on all tasks
+            resetAllTaskExecutionState();
+
             // Reset drain mode flags if we were preparing for break
             if (isDrainingForBreak) {
                 isDrainingForBreak = false;
                 hasTriggeredExpedite = false;
                 ScriptLogger.info(this, "Reset drain mode flags due to logout");
             }
-            
+
             // Pause XP failsafe timer when not logged in
             if (xpFailsafePauseDuringLogout && xpFailsafeEnabled) {
                 pauseXPFailsafeTimer();
@@ -1134,8 +1138,23 @@ public class JorkHunter extends AbstractMetricsScript {
         }
         
         ScriptLogger.info(this, "Trap tracking cleared - will rescan for new traps");
+
+        // Reset mid-action execution state on all tasks (committed positions, movement flags, etc.)
+        resetAllTaskExecutionState();
     }
-    
+
+    /**
+     * Resets mid-action execution state on all registered tasks.
+     * Prevents stale committed positions, movement flags, etc. from causing stuck loops after relog.
+     */
+    private void resetAllTaskExecutionState() {
+        if (taskManager != null) {
+            for (Task task : taskManager.getTasks()) {
+                task.resetExecutionState();
+            }
+        }
+    }
+
     /**
      * Creates the metrics panel configuration
      */

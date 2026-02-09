@@ -166,9 +166,6 @@ public class RingOfDuelingHandler extends AbstractTeleportHandler {
             return TeleportResult.INTERACTION_FAILED;
         }
 
-        // Wait for teleport animation
-        waitForTeleportAnimation();
-
         // Verify arrival at Castle Wars
         if (verifyArrival()) {
             return TeleportResult.SUCCESS;

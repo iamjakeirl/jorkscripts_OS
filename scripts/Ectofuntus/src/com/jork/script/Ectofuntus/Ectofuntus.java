@@ -51,7 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
     name = "Ectofuntus",
     author = "jork",
     version = 1.0,
-    description = "Automates prayer training at the Ectofuntus",
+    threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
     skillCategory = SkillCategory.PRAYER
 )
 public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScript {
@@ -155,6 +155,13 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
             ScriptLogger.info(this, "XP Failsafe DISABLED");
         }
 
+        if (config.isRunePouchModeEnabled()) {
+            ScriptLogger.info(this, "Rune pouch mode ENABLED - rune inventory/bank checks are skipped");
+            ScriptLogger.info(this, "Rune pouch mode requires a rune pouch in inventory");
+        } else {
+            ScriptLogger.info(this, "Rune pouch mode DISABLED");
+        }
+
         this.settingsConfirmed = true;
     }
 
@@ -195,18 +202,25 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
 
     /**
      * Sets the supply baseline based on current config.
-     * Wearable teleports allow 9 supplies, otherwise 8.
+     * Ectofuntus always uses 8 supplies per cycle.
      */
     private void updateSupplyBaselineFromConfig() {
         if (config == null) {
             return;
         }
 
-        int baseline = config.getBankLocation().isWearable() ? 9 : 8;
+        int baseline = 8;
         supplyBaseline = baseline;
         ScriptLogger.debug(this, "Supply baseline set to " + baseline + " (config)");
     }
 
+    /**
+     * Opens the inventory tab if it is not already open.
+     *
+     * Poll patterns:
+     * - pollFramesHuman for inventory open -- CORRECT, opening inventory is a visible UI action
+     *   (player clicks and sees inventory tab appear)
+     */
     private void openInventoryIfNeeded() {
         if (getWidgetManager() == null || getWidgetManager().getInventory() == null) {
             ScriptLogger.debug(this, "Inventory unavailable - skipping open attempt");
@@ -225,20 +239,22 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
                 return getWidgetManager().getInventory().open();
             }
             return true;
-        }, 2000);
+        }, RandomUtils.uniformRandom(1800, 2600));
     }
 
     @Override
     public int poll() {
         // ─── Wait for Settings Confirmation ──────────────────────────
         if (!settingsConfirmed) {
-            return 1000;
+            pollFramesUntil(() -> settingsConfirmed, RandomUtils.gaussianRandom(250, 900, 500, 140));
+            return 0;
         }
 
         // ─── Deferred Initialization ─────────────────────────────────
         initialiseIfReady();
         if (!initialised) {
-            return 1000;
+            pollFramesUntil(() -> initialised, RandomUtils.gaussianRandom(250, 900, 500, 140));
+            return 0;
         }
 
         // ─── One-time Startup State Detection ────────────────────────
@@ -246,7 +262,8 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
             ScriptLogger.info(this, "Running startup state detection");
             detectAndRecoverState();
             stateDetectionCompleted = true;
-            return 500;  // Allow state to settle before continuing
+            pollFramesUntil(() -> false, RandomUtils.gaussianRandom(250, 800, 450, 120));
+            return 0;
         }
 
         return runProductionMode();
@@ -265,7 +282,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
                 ScriptLogger.error(this, "XP FAILSAFE TRIGGERED: No XP for " +
                     config.getXpFailsafeTimeoutMinutes() + " minutes. Stopping.");
                 stop();
-                return 1000;
+                return 0;
             }
 
             // Warn when approaching timeout
@@ -335,7 +352,8 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         }
 
         // Default poll rate
-        return 500;
+        pollFramesUntil(() -> false, RandomUtils.gaussianRandom(250, 800, 450, 120));
+        return 0;
     }
 
     @Override

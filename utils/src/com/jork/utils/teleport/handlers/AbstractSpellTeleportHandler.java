@@ -10,8 +10,7 @@ import com.osmb.api.script.Script;
 import com.osmb.api.ui.tabs.Spellbook;
 import com.osmb.api.ui.spellbook.Spell;
 import com.osmb.api.ui.spellbook.SpellNotFoundException;
-
-import java.util.concurrent.ThreadLocalRandom;
+import com.osmb.api.utils.RandomUtils;
 
 /**
  * Base class for spell-based teleport handlers.
@@ -45,22 +44,6 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
 
     /** Maximum retry attempts before giving up */
     protected static final int MAX_TELEPORT_RETRIES = 3;
-
-    /** Base timeout for teleport arrival verification (ms) */
-    protected static final int BASE_ARRIVAL_TIMEOUT = 8000;
-
-    /** Base timeout for spell selection (ms) */
-    protected static final int BASE_SPELL_TIMEOUT = 3000;
-
-    /** Delay between retry attempts (ms) */
-    protected static final int BASE_RETRY_DELAY = 800;
-
-    /** Post-spell delay before checking arrival (ms) */
-    protected static final int BASE_POST_CAST_DELAY = 600;
-
-    /** Variance range for timeout randomization */
-    protected static final double MIN_VARIANCE = 0.15;  // 15%
-    protected static final double MAX_VARIANCE = 0.25;  // 25%
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Instance Fields
@@ -131,6 +114,10 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
         return true;
     }
 
+    /**
+     * Executes the spell teleport with retry logic.
+     * Delegates to executeTeleport() which calls verifyArrival() for arrival confirmation.
+     */
     @Override
     public TeleportResult teleport() {
         // Pre-checks
@@ -183,13 +170,6 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
             }
 
             ScriptLogger.warning(script, "Teleport attempt failed: " + result + " - retrying...");
-
-            // Short delay before retry
-            try {
-                script.pollFramesHuman(() -> true, randomizeTimeout(BASE_RETRY_DELAY));
-            } catch (Exception e) {
-                ExceptionUtils.rethrowIfTaskInterrupted(e);
-            }
         }
 
         ScriptLogger.error(script, "Teleport failed after " + MAX_TELEPORT_RETRIES + " attempts");
@@ -249,9 +229,6 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
             return TeleportResult.INTERACTION_FAILED;
         }
 
-        // Wait for teleport animation/movement
-        waitForTeleportAnimation();
-
         // Verify arrival at destination
         if (verifyArrival()) {
             return TeleportResult.SUCCESS;
@@ -262,53 +239,21 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
 
     /**
      * Verifies arrival at destination with polling.
+     * Uses pollFramesHuman so a human reaction delay is added after arrival is detected.
+     * On timeout, the wait duration itself serves as the delay before retry.
      *
      * @return true if arrived at destination within timeout
      */
     protected boolean verifyArrival() {
         try {
-            return script.pollFramesUntil(() -> {
+            return script.pollFramesHuman(() -> {
                 WorldPosition pos = script.getWorldPosition();
                 return pos != null && isAtDestination(pos);
-            }, getArrivalTimeout());
+            }, RandomUtils.uniformRandom(4000, 7000));
         } catch (Exception e) {
             ExceptionUtils.rethrowIfTaskInterrupted(e);
             return false;
         }
-    }
-
-    /**
-     * Adds a post-spell delay before checking arrival.
-     */
-    protected void waitForTeleportAnimation() {
-        try {
-            script.pollFramesHuman(() -> true, randomizeTimeout(BASE_POST_CAST_DELAY));
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-        }
-    }
-
-    /**
-     * Gets a randomized arrival timeout.
-     *
-     * @return Timeout in milliseconds with variance applied
-     */
-    protected int getArrivalTimeout() {
-        return randomizeTimeout(BASE_ARRIVAL_TIMEOUT);
-    }
-
-    /**
-     * Applies random variance to a base timeout value.
-     *
-     * @param baseTimeout The base timeout value in milliseconds
-     * @return Randomized timeout with variance applied
-     */
-    protected int randomizeTimeout(int baseTimeout) {
-        double variancePercent = MIN_VARIANCE +
-            (ThreadLocalRandom.current().nextDouble() * (MAX_VARIANCE - MIN_VARIANCE));
-        int variance = (int) (baseTimeout * variancePercent);
-        int adjustment = ThreadLocalRandom.current().nextBoolean() ? variance : -variance;
-        return baseTimeout + adjustment;
     }
 
     /**

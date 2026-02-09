@@ -11,7 +11,7 @@ import com.osmb.api.script.SkillCategory;
     name = "jorkHunter - Bird Snares",
     author = "jork",
     version = 1.0,
-    description = "Automated bird snaring for crimson swifts, copper longtails, and tropical wagtails.",
+    threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
     skillCategory = SkillCategory.HUNTER
 )
 public class JorkHunterBirdSnares extends JorkHunter {

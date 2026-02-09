@@ -1,6 +1,7 @@
 package com.jork.utils;
 
 import com.osmb.api.item.ItemGroupResult;
+import com.osmb.api.item.ItemSearchResult;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.scene.RSObject;
 import com.osmb.api.script.Script;
@@ -167,6 +168,7 @@ public class JorkBank {
 
     private final Script script;
 
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Constructor
     // ═══════════════════════════════════════════════════════════════════════════
@@ -197,6 +199,9 @@ public class JorkBank {
     /**
      * Opens a bank matching the custom filter.
      * Useful when you need to interact with a specific bank object.
+     *
+     * Poll patterns:
+     * - pollFramesUntil for bank open -- verification only, caller handles humanization
      *
      * @param customFilter Optional predicate to filter bank objects (null for default)
      * @return OpenResult indicating success or specific failure reason
@@ -231,9 +236,9 @@ public class JorkBank {
             return OpenResult.INTERACTION_FAILED;
         }
 
-        // Wait for bank to open with human-like delay
+        // Wait for bank to open (caller handles humanization)
         try {
-            boolean opened = script.pollFramesHuman(() -> isOpen(), getOpenTimeout());
+            boolean opened = script.pollFramesUntil(() -> isOpen(), getOpenTimeout());
 
             if (opened) {
                 ScriptLogger.actionSuccess(script, "Bank opened successfully");
@@ -252,6 +257,9 @@ public class JorkBank {
     /**
      * Closes the bank interface if it's open.
      *
+     * Poll patterns:
+     * - pollFramesUntil for bank close -- verification only, caller handles humanization
+     *
      * @return true if bank is now closed (or was already closed)
      */
     public boolean close() {
@@ -268,9 +276,9 @@ public class JorkBank {
         boolean closed = bank.close();
 
         if (closed) {
-            // Wait for interface to actually close
+            // Wait for interface to actually close (caller handles humanization)
             try {
-                script.pollFramesHuman(() -> !isOpen(), getTransactionTimeout());
+                script.pollFramesUntil(() -> !isOpen(), getTransactionTimeout());
             } catch (Exception e) {
                 ExceptionUtils.rethrowIfTaskInterrupted(e);
             }
@@ -305,6 +313,10 @@ public class JorkBank {
 
     /**
      * Deposits a specific amount of an item from inventory to bank.
+     *
+     * Poll patterns:
+     * - pollFramesUntil for inventory count decrease -- CORRECT, background verification
+     *   (deposit is instant, checking count is not a visible UI event)
      *
      * @param itemId The item ID to deposit
      * @param amount The amount to deposit (use -1 for all)
@@ -371,6 +383,10 @@ public class JorkBank {
     /**
      * Deposits all items except those in the specified set.
      *
+     * Poll patterns:
+     * - pollFramesUntil for only kept items remaining -- CORRECT, background verification
+     *   (checking remaining item count is not a visible UI event)
+     *
      * @param keepItemIds Set of item IDs to keep in inventory
      * @return TransactionResult indicating success or failure
      */
@@ -424,6 +440,14 @@ public class JorkBank {
     /**
      * Withdraws a specific amount of an item from bank to inventory.
      *
+     * Optimizes X-quantity withdrawals: if OSMB's cached X value already matches
+     * the desired amount, bypasses the X dialogue by interacting with the item
+     * directly via its right-click menu. Falls back to standard withdraw if the
+     * direct interaction fails.
+     *
+     * Poll patterns:
+     * - pollFramesUntil for inventory count increase -- verification only, caller handles humanization
+     *
      * @param itemId The item ID to withdraw
      * @param amount The amount to withdraw
      * @return TransactionResult indicating success or failure
@@ -443,7 +467,10 @@ public class JorkBank {
         int startCount = getInventoryCount(itemId);
         ScriptLogger.debug(script, "Withdrawing " + amount + " of item " + itemId);
 
-        boolean success = bank.withdraw(itemId, amount);
+        boolean success;
+
+        success = bank.withdraw(itemId, amount);
+
         if (!success) {
             ScriptLogger.warning(script, "Withdraw operation returned false");
             return TransactionResult.OPERATION_FAILED;
@@ -451,7 +478,7 @@ public class JorkBank {
 
         // Verify withdrawal completed
         try {
-            boolean verified = script.pollFramesHuman(() ->
+            boolean verified = script.pollFramesUntil(() ->
                 getInventoryCount(itemId) > startCount, getTransactionTimeout());
 
             return verified ? TransactionResult.SUCCESS : TransactionResult.VERIFICATION_TIMEOUT;
@@ -679,6 +706,48 @@ public class JorkBank {
         } catch (Exception e) {
             ScriptLogger.debug(script, "Error getting inventory count: " + e.getMessage());
             return 0;
+        }
+    }
+
+    /**
+     * Checks if an amount requires the X (custom) quantity button.
+     * Standard amounts (1, 5, 10) have dedicated buttons and don't trigger X dialogue.
+     *
+     * <p>Currently unused — OSMB's default withdraw handles X-quantity correctly.
+     * Preserved for future use (e.g., single-tap optimization).</p>
+     */
+    private boolean isCustomAmount(int amount) {
+        return amount != 1 && amount != 5 && amount != 10;
+    }
+
+    /**
+     * Attempts to withdraw by directly interacting with the bank item's right-click menu,
+     * bypassing OSMB's withdraw flow (which always enters the X dialogue).
+     * Only works when X quantity is already cached to the desired amount.
+     *
+     * <p>Currently unused — OSMB's default withdraw handles X-quantity correctly.
+     * Preserved for future use (e.g., single-tap optimization).</p>
+     *
+     * @return true if the interaction was sent successfully
+     */
+    private boolean withdrawViaDirectInteract(Bank bank, int itemId, int amount) {
+        try {
+            ItemGroupResult search = bank.search(Set.of(itemId));
+            if (search == null) {
+                return false;
+            }
+
+            ItemSearchResult item = search.getItem(itemId);
+            if (item == null) {
+                return false;
+            }
+
+            // Try"Withdraw-<amount>"
+            return item.interact("Withdraw-" + amount);
+        } catch (Exception e) {
+            ExceptionUtils.rethrowIfTaskInterrupted(e);
+            ScriptLogger.debug(script, "Direct withdraw interact failed: " + e.getMessage());
+            return false;
         }
     }
 

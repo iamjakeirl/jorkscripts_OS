@@ -11,8 +11,9 @@ import com.jork.utils.teleport.handlers.EctophialHandler;
 import com.osmb.api.item.ItemGroupResult;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.scene.RSObject;
+import com.osmb.api.utils.RandomUtils;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Handles worship at the Ectofuntus altar to gain Prayer XP.
@@ -79,7 +80,6 @@ public class WorshipTask {
 
     /**
      * Execute the worship task.
-     * @return poll delay in milliseconds
      */
     public int execute() {
         switch (currentState) {
@@ -96,7 +96,7 @@ public class WorshipTask {
             default:
                 ScriptLogger.error(script.getScript(), "Unknown WorshipTask state: " + currentState);
                 currentState = State.CHECK_LOCATION;
-                return 1000;
+                return 0;
         }
     }
 
@@ -125,21 +125,21 @@ public class WorshipTask {
             if (altar != null) {
                 ScriptLogger.info(script.getScript(), "Already at altar - continuing");
                 currentState = State.WORSHIP;
-                return randomDelay(200, 400);
+                return 0;
             }
             // Near altar but can't see it - fall through to navigation
         }
 
         // Not at correct location - ensure we're at altar start
         if (!ensureNearAltarStart()) {
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Re-fetch position after potential teleport
         pos = script.getWorldPosition();
         if (pos == null) {
             ScriptLogger.warning(script.getScript(), "Position unavailable");
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.debug(script.getScript(), "Worship: Current region = " + pos.getRegionID());
@@ -160,7 +160,7 @@ public class WorshipTask {
             }
             script.setShouldBank(true);
             reset();
-            return 1000;
+            return 0;
         }
 
         ScriptLogger.info(script.getScript(), "Ready to worship with " + bonemealCount +
@@ -171,12 +171,12 @@ public class WorshipTask {
             RSObject altar = findAltar();
             if (altar != null) {
                 currentState = State.WORSHIP;
-                return randomDelay(200, 400);
+                return 0;
             }
         }
 
         currentState = State.NAVIGATE_TO_ALTAR;
-        return randomDelay(200, 400);
+        return 0;
     }
 
     /**
@@ -185,7 +185,7 @@ public class WorshipTask {
     private int handleNavigateToAltar() {
         // Use ectophial to teleport to altar - ensureNearAltarStart() handles this
         if (!ensureNearAltarStart()) {
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Now at altar - check if we can find it
@@ -194,7 +194,7 @@ public class WorshipTask {
             ScriptLogger.info(script.getScript(), "Found altar");
             retryCount = 0;
             currentState = State.WORSHIP;
-            return randomDelay(300, 500);
+            return 0;
         }
 
         // Can't find altar visually - walk closer
@@ -203,25 +203,29 @@ public class WorshipTask {
 
         if (handleRetryWithEscalation("Finding altar")) {
             script.stop();
-            return 1000;
         }
 
-        return randomDelay(800, 1200);
+        return 0;
     }
 
     /**
      * Worships at the Ectofuntus altar using JorkTaps spam tap pattern.
      * Uses position-based tapping with human variant delays (150-400ms) until all supplies are consumed.
+     *
+     * Poll patterns: JorkTaps.spamTapArea(human=true) -- CORRECT, player actively watching altar.
      */
     private int handleWorship() {
-        // Check supplies before worship
-        int bonemealCount = getBonemealCount();
-        int slimeCount = getSlimeCount();
+        // Snapshot relevant inventory state once for this handler pass
+        Set<Integer> itemIds = new HashSet<>(EctofuntusConstants.BONEMEAL_IDS);
+        itemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
+        ItemGroupResult inventorySnapshot = getInventorySnapshot(itemIds);
+        int bonemealCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slimeCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
 
         if (bonemealCount == 0 || slimeCount == 0) {
             ScriptLogger.info(script.getScript(), "Supplies depleted - worship complete");
             currentState = State.VERIFY_COMPLETE;
-            return randomDelay(300, 500);
+            return 0;
         }
 
         // Find the altar
@@ -229,7 +233,7 @@ public class WorshipTask {
         if (altar == null) {
             ScriptLogger.warning(script.getScript(), "Cannot find altar");
             currentState = State.NAVIGATE_TO_ALTAR;
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         ScriptLogger.actionAttempt(script.getScript(), "Spam tapping altar (bonemeal: " +
@@ -249,7 +253,8 @@ public class WorshipTask {
             EctofuntusConstants.WORSHIP_HUMAN_TAP_MAX_DELAY,
             maxTaps,
             () -> isWorshipComplete(),  // Existing baseline check condition
-            true  // human = true (context requirement: human variant ONLY)
+            true,  // human = true (context requirement: human variant ONLY)
+            true   // ignoreTasks = true (suppress break/hop/afk during worship)
         );
 
         if (success) {
@@ -267,7 +272,7 @@ public class WorshipTask {
         // Safety: If spam tap returned false, max taps reached without completion
         ScriptLogger.warning(script.getScript(), "Spam tap returned false - verifying state");
         currentState = State.VERIFY_COMPLETE;
-        return randomDelay(300, 500);
+        return 0;
     }
 
     /**
@@ -275,11 +280,17 @@ public class WorshipTask {
      * Complete when empty pots AND empty buckets return to baseline.
      */
     private int handleVerifyComplete() {
-        int bonemealCount = getBonemealCount();
-        int slimeCount = getSlimeCount();
         int baseline = script.getSupplyBaseline();
-        int emptyPots = getEmptyPotCount();
-        int emptyBuckets = getEmptyBucketCount();
+        Set<Integer> itemIds = new HashSet<>(EctofuntusConstants.BONEMEAL_IDS);
+        itemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
+        itemIds.add(EctofuntusConstants.EMPTY_POT);
+        itemIds.add(EctofuntusConstants.EMPTY_BUCKET);
+        ItemGroupResult inventorySnapshot = getInventorySnapshot(itemIds);
+
+        int bonemealCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slimeCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        int emptyPots = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
+        int emptyBuckets = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
 
         ScriptLogger.info(script.getScript(), "Worship verification - emptyPots: " + emptyPots +
             ", emptyBuckets: " + emptyBuckets + ", baseline: " + baseline);
@@ -288,19 +299,19 @@ public class WorshipTask {
             // Containers back at baseline - worship complete
             ScriptLogger.info(script.getScript(), "Containers at baseline - worship complete");
             currentState = State.SET_BANK_FLAG;
-            return randomDelay(200, 400);
+            return 0;
         } else if (bonemealCount > 0 && slimeCount > 0) {
             // Still have supplies to use
             ScriptLogger.warning(script.getScript(), "Still have supplies (bonemeal: " + bonemealCount +
                 ", slime: " + slimeCount + ") - continuing worship");
             currentState = State.WORSHIP;
-            return randomDelay(300, 500);
+            return 0;
         } else {
             // Partial completion - mark complete to avoid loops
             ScriptLogger.warning(script.getScript(), "Partial completion - empties: " + emptyPots +
                 "/" + emptyBuckets + " vs baseline " + baseline);
             currentState = State.SET_BANK_FLAG;
-            return randomDelay(200, 400);
+            return 0;
         }
     }
 
@@ -324,9 +335,12 @@ public class WorshipTask {
         // Reset task state
         reset();
 
-        return randomDelay(300, 500);
+        return 0;
     }
 
+    /**
+     * Ensures the player is near the altar start position via ectophial teleport.
+     */
     private boolean ensureNearAltarStart() {
         WorldPosition startPos = script.getWorldPosition();
         if (startPos != null) {
@@ -363,12 +377,11 @@ public class WorshipTask {
             return false;
         }
 
-        // Wait for position change (design doc: 500-1000ms timeout)
-        int timeout = 500 + ThreadLocalRandom.current().nextInt(500);
-        boolean posChanged = script.pollFramesHuman(() -> {
+        // Wait for position change - teleport handler already handled visible animation
+        boolean posChanged = script.pollFramesUntil(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && !newPos.equals(startPos);
-        }, timeout);
+        }, RandomUtils.uniformRandom(500, 1000));
 
         if (!posChanged) {
             ScriptLogger.debug(script.getScript(), "Position unchanged after teleport - may still be animating");
@@ -387,7 +400,8 @@ public class WorshipTask {
     private RSObject findAltar() {
         return script.getObjectManager().getRSObject(
             obj -> obj.getName() != null &&
-                   obj.getName().equals(EctofuntusConstants.ECTOFUNTUS_ALTAR_NAME)
+                   obj.getName().equalsIgnoreCase(EctofuntusConstants.ECTOFUNTUS_ALTAR_NAME) &&
+                   obj.canReach()
         );
     }
 
@@ -437,12 +451,37 @@ public class WorshipTask {
      * @return true if worship is complete
      */
     private boolean isWorshipComplete() {
-        int emptyPots = getInventoryCount(EctofuntusConstants.EMPTY_POT);
-        int emptyBuckets = getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
+        ItemGroupResult inventorySnapshot = getInventorySnapshot(
+            Set.of(EctofuntusConstants.EMPTY_POT, EctofuntusConstants.EMPTY_BUCKET)
+        );
+        int emptyPots = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
+        int emptyBuckets = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
         int baseline = script.getSupplyBaseline();
 
         // Complete when both container types are back at baseline
         return emptyPots >= baseline && emptyBuckets >= baseline;
+    }
+
+    private ItemGroupResult getInventorySnapshot(Set<Integer> itemIds) {
+        try {
+            var wm = script.getWidgetManager();
+            if (wm == null || wm.getInventory() == null || itemIds == null || itemIds.isEmpty()) {
+                return null;
+            }
+            return wm.getInventory().search(itemIds);
+        } catch (Exception e) {
+            ExceptionUtils.rethrowIfTaskInterrupted(e);
+            ScriptLogger.debug(script.getScript(), "Error taking inventory snapshot: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private int getSnapshotAmount(ItemGroupResult snapshot, int itemId) {
+        return snapshot != null ? snapshot.getAmount(itemId) : 0;
+    }
+
+    private int getSnapshotAmount(ItemGroupResult snapshot, Set<Integer> itemIds) {
+        return snapshot != null ? snapshot.getAmount(itemIds) : 0;
     }
 
     /**
@@ -499,10 +538,4 @@ public class WorshipTask {
         return false; // Can continue
     }
 
-    /**
-     * Generates a random delay between min and max values.
-     */
-    private int randomDelay(int min, int max) {
-        return min + ThreadLocalRandom.current().nextInt(max - min);
-    }
 }

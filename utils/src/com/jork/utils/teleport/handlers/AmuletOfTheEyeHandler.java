@@ -169,9 +169,6 @@ public class AmuletOfTheEyeHandler extends AbstractTeleportHandler {
             return TeleportResult.INTERACTION_FAILED;
         }
 
-        // Wait for teleport animation
-        waitForTeleportAnimation();
-
         // Verify arrival at Temple of the Eye
         if (verifyArrival()) {
             return TeleportResult.SUCCESS;

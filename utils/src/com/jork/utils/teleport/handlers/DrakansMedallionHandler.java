@@ -175,9 +175,6 @@ public class DrakansMedallionHandler extends AbstractTeleportHandler {
             return TeleportResult.INTERACTION_FAILED;
         }
 
-        // Wait for teleport animation
-        waitForTeleportAnimation();
-
         // Verify arrival at destination
         if (verifyArrival()) {
             return TeleportResult.SUCCESS;

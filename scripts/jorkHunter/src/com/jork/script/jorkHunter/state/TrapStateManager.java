@@ -725,6 +725,9 @@ public class TrapStateManager {
     public void clearAllTraps() {
         traps.clear();
         isLayingTrap.set(false);
+        currentlyLayingPosition = null;
+        isResettingTrap.set(false);
+        currentlyResettingPosition = null;
         previousRespawnStates.clear();
         missingTrapsTimestamp.clear();
         trapGracePeriods.clear();

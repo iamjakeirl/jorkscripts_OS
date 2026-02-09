@@ -51,7 +51,7 @@ public final class JorkTaps {
      */
     public static boolean spamTap(Script script, Shape shape, int minDelayMs, int maxDelayMs,
                                    int maxTaps, BooleanSupplier condition) {
-        return spamTap(script, shape, minDelayMs, maxDelayMs, maxTaps, condition, false);
+        return spamTap(script, shape, minDelayMs, maxDelayMs, maxTaps, condition, false, false);
     }
 
     /**
@@ -68,6 +68,25 @@ public final class JorkTaps {
      */
     public static boolean spamTap(Script script, Shape shape, int minDelayMs, int maxDelayMs,
                                    int maxTaps, BooleanSupplier condition, boolean human) {
+        return spamTap(script, shape, minDelayMs, maxDelayMs, maxTaps, condition, human, false);
+    }
+
+    /**
+     * Spam tap a screen-space shape until a condition is met or max taps reached.
+     *
+     * @param script      The script instance
+     * @param shape       The screen-space shape to tap (Rectangle, Polygon)
+     * @param minDelayMs  Minimum delay between taps in milliseconds
+     * @param maxDelayMs  Maximum delay between taps in milliseconds
+     * @param maxTaps     Maximum number of taps before giving up
+     * @param condition   Completion condition - stops when this returns true. If null, taps maxTaps times.
+     * @param human       If true, uses pollFramesHuman (adds human delay after completion)
+     * @param ignoreTasks If true, suppresses break/hop/afk interruptions during tapping
+     * @return true if condition was met, false if max taps reached without condition met
+     */
+    public static boolean spamTap(Script script, Shape shape, int minDelayMs, int maxDelayMs,
+                                   int maxTaps, BooleanSupplier condition, boolean human,
+                                   boolean ignoreTasks) {
         if (script == null) {
             ScriptLogger.warning(null, "JorkTaps.spamTap: script is null");
             return false;
@@ -135,9 +154,9 @@ public final class JorkTaps {
 
         try {
             if (human) {
-                script.pollFramesHuman(pollCondition, totalTimeout);
+                script.pollFramesHuman(pollCondition, totalTimeout, ignoreTasks);
             } else {
-                script.pollFramesUntil(pollCondition, totalTimeout);
+                script.pollFramesUntil(pollCondition, totalTimeout, ignoreTasks);
             }
         } catch (Exception e) {
             ScriptLogger.debug(script, "JorkTaps.spamTap: Interrupted after " + tapCount[0] + " taps");
@@ -169,7 +188,7 @@ public final class JorkTaps {
     public static boolean spamTapArea(Script script, RectangleArea area, int cubeHeight,
                                        int minDelayMs, int maxDelayMs, int maxTaps,
                                        BooleanSupplier condition) {
-        return spamTapArea(script, area, cubeHeight, minDelayMs, maxDelayMs, maxTaps, condition, false);
+        return spamTapArea(script, area, cubeHeight, minDelayMs, maxDelayMs, maxTaps, condition, false, false);
     }
 
     /**
@@ -189,6 +208,28 @@ public final class JorkTaps {
     public static boolean spamTapArea(Script script, RectangleArea area, int cubeHeight,
                                        int minDelayMs, int maxDelayMs, int maxTaps,
                                        BooleanSupplier condition, boolean human) {
+        return spamTapArea(script, area, cubeHeight, minDelayMs, maxDelayMs, maxTaps, condition, human, false);
+    }
+
+    /**
+     * Spam tap a world-space RectangleArea until a condition is met or max taps reached.
+     * Converts the area to a screen-space Polygon via SceneProjector.
+     *
+     * @param script      The script instance
+     * @param area        The world-space RectangleArea to tap
+     * @param cubeHeight  The height of the 3D projection (e.g., 100 for standard objects)
+     * @param minDelayMs  Minimum delay between taps in milliseconds
+     * @param maxDelayMs  Maximum delay between taps in milliseconds
+     * @param maxTaps     Maximum number of taps before giving up
+     * @param condition   Completion condition - stops when this returns true. If null, taps maxTaps times.
+     * @param human       If true, uses pollFramesHuman (adds human delay after completion)
+     * @param ignoreTasks If true, suppresses break/hop/afk interruptions during tapping
+     * @return true if condition was met, false if max taps reached or area not visible
+     */
+    public static boolean spamTapArea(Script script, RectangleArea area, int cubeHeight,
+                                       int minDelayMs, int maxDelayMs, int maxTaps,
+                                       BooleanSupplier condition, boolean human,
+                                       boolean ignoreTasks) {
         if (script == null) {
             ScriptLogger.warning(null, "JorkTaps.spamTapArea: script is null");
             return false;
@@ -206,7 +247,7 @@ public final class JorkTaps {
             return false;
         }
 
-        return spamTap(script, areaCube, minDelayMs, maxDelayMs, maxTaps, condition, human);
+        return spamTap(script, areaCube, minDelayMs, maxDelayMs, maxTaps, condition, human, ignoreTasks);
     }
 
     /**

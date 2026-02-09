@@ -46,6 +46,14 @@ public class DropTask implements Task {
     }
 
     @Override
+    public void resetExecutionState() {
+        movingForDrop = false;
+        preMovePosition = null;
+        dropTargetX = 0;
+        dropTargetY = 0;
+    }
+
+    @Override
     public boolean canExecute() {
         // If no items to drop (e.g., chinchompa hunting), never execute
         if (itemsToDrop == null || itemsToDrop.length == 0) {

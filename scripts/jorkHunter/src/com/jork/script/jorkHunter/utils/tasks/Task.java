@@ -12,4 +12,10 @@ public interface Task {
      * @return The delay in milliseconds for the next poll.
      */
     int execute();
+
+    /**
+     * Resets any mid-action execution state (e.g., committed positions, movement flags).
+     * Called on relog/logout to prevent stale state from causing stuck loops.
+     */
+    default void resetExecutionState() {}
 } 

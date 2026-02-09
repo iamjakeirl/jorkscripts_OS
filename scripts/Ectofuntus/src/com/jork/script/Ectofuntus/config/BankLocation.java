@@ -6,20 +6,17 @@ package com.jork.script.Ectofuntus.config;
  * @author jork
  */
 public enum BankLocation {
-    VARROCK("Varrock Teleport", -1, false),
-    FALADOR("Falador Teleport", -1, false),
-    CAMELOT("Camelot Teleport", -1, false),
-    AMULET_OF_THE_EYE("Amulet of the Eye", 26914, true),
-    WALK_PORT_PHASMATYS("Walk to Port Phasmatys", -1, false);
+    VARROCK("Varrock Teleport", -1),
+    FALADOR("Falador Teleport", -1),
+    CAMELOT("Camelot Teleport", -1),
+    WALK_PORT_PHASMATYS("Walk to Port Phasmatys", -1);
 
     private final String displayName;
     private final int itemId;  // -1 for walking (no item required)
-    private final boolean isWearable;  // true if teleport can be worn (allows 9 supplies instead of 8)
 
-    BankLocation(String displayName, int itemId, boolean isWearable) {
+    BankLocation(String displayName, int itemId) {
         this.displayName = displayName;
         this.itemId = itemId;
-        this.isWearable = isWearable;
     }
 
     public String getDisplayName() {
@@ -32,10 +29,6 @@ public enum BankLocation {
 
     public boolean requiresItem() {
         return itemId != -1;
-    }
-
-    public boolean isWearable() {
-        return isWearable;
     }
 
     @Override

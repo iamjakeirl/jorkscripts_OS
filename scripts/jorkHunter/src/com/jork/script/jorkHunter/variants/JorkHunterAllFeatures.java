@@ -11,7 +11,7 @@ import com.osmb.api.script.SkillCategory;
     name = "jorkHunter (All Features)",
     author = "jork",
     version = 1.0,
-    description = "A versatile All-In-One (AIO) hunter script - Development version with all trap types.",
+    threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
     skillCategory = SkillCategory.HUNTER
 )
 public class JorkHunterAllFeatures extends JorkHunter {

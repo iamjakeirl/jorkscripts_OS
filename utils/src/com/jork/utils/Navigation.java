@@ -173,9 +173,15 @@ public class Navigation {
 
     /**
      * Simple screen-based movement for short distances with configurable tolerance.
-     * If the target is on screen, taps directly on the tile with one retry attempt. 
+     * If the target is on screen, taps directly on the tile with one retry attempt.
      * Otherwise falls back to A* walker.
-     * 
+     *
+     * Poll patterns:
+     * - pollFramesUntil for movement completion -- CORRECT, pure position/state verification
+     * - pollFramesHuman(() -> true) after arrival -- CORRECT, human recognizes arrival (reaction delay)
+     * - pollFramesHuman(() -> true) after failed tap -- CORRECT, human reaction to failed interaction
+     * - pollFramesHuman(() -> true) after movement stopped -- CORRECT, human reaction to stopped movement
+     *
      * @param targetPosition The target WorldPosition to move to
      * @param timeout Maximum time to wait for movement completion in milliseconds
      * @param tolerance Distance tolerance in tiles (0 for exact position, 1 for adjacent, etc.)

@@ -15,9 +15,9 @@ import com.osmb.api.item.ItemGroupResult;
 import com.osmb.api.item.ItemSearchResult;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.scene.RSObject;
+import com.osmb.api.utils.RandomUtils;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Handles bone grinding on the top floor of the Ectofuntus.
@@ -60,15 +60,10 @@ public class GrindBonesTask {
     /** Expected number of bonemeal pots when grinding is complete */
     private int expectedBonemealCount = 0;
 
-    /** Timestamp when grinding started */
-    private long grindingStartTime = 0;
-
     /** Retry counter for failed interactions */
     private int retryCount = 0;
     private static final int MAX_RETRIES = 3;
 
-    /** Poll interval while waiting for grinding */
-    private static final int GRINDING_POLL_INTERVAL = 1000;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Constructor
@@ -116,7 +111,6 @@ public class GrindBonesTask {
 
     /**
      * Execute the bone grinding task.
-     * @return poll delay in milliseconds
      */
     public int execute() {
         switch (currentState) {
@@ -133,7 +127,7 @@ public class GrindBonesTask {
             default:
                 ScriptLogger.error(script.getScript(), "Unknown GrindBonesTask state: " + currentState);
                 currentState = State.CHECK_LOCATION;
-                return 1000;
+                return 0;
         }
     }
 
@@ -143,7 +137,6 @@ public class GrindBonesTask {
     public void reset() {
         currentState = State.CHECK_LOCATION;
         expectedBonemealCount = 0;
-        grindingStartTime = 0;
         retryCount = 0;
     }
 
@@ -162,20 +155,20 @@ public class GrindBonesTask {
             if (isNearGrinder(pos)) {
                 ScriptLogger.info(script.getScript(), "Already at grinder - continuing");
                 currentState = State.USE_BONES_ON_HOPPER;
-                return randomDelay(200, 400);
+                return 0;
             }
         }
 
         // Not at correct location - ensure we're at altar start
         if (!ensureNearAltarStart()) {
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // Re-fetch position after potential teleport
         pos = script.getWorldPosition();
         if (pos == null) {
             ScriptLogger.warning(script.getScript(), "Position unavailable");
-            return 1000;
+            return 0;
         }
 
         int currentPlane = pos.getPlane();
@@ -187,14 +180,14 @@ public class GrindBonesTask {
         if (bonemealCount > 0 && boneCount == 0) {
             ScriptLogger.info(script.getScript(), "Already have " + bonemealCount + " pot(s) of bonemeal");
             currentState = State.COMPLETE;
-            return randomDelay(200, 400);
+            return 0;
         }
 
         // Count bones to determine expected bonemeal
         if (boneCount == 0) {
             ScriptLogger.warning(script.getScript(), "No bones in inventory!");
             script.setShouldBank(true);
-            return 1000;
+            return 0;
         }
 
         // Count empty pots - we need enough for the bones
@@ -202,7 +195,7 @@ public class GrindBonesTask {
         if (emptyPotCount == 0) {
             ScriptLogger.warning(script.getScript(), "No empty pots in inventory!");
             script.setShouldBank(true);
-            return 1000;
+            return 0;
         }
 
         // Expected bonemeal = total empty pots (pots are the limiting factor)
@@ -218,7 +211,7 @@ public class GrindBonesTask {
             currentState = State.NAVIGATE_TO_TOP_FLOOR;
         }
 
-        return randomDelay(200, 400);
+        return 0;
     }
 
     /**
@@ -228,28 +221,27 @@ public class GrindBonesTask {
         WorldPosition pos = script.getWorldPosition();
         if (pos == null) {
             ScriptLogger.warning(script.getScript(), "Position unavailable");
-            return 1000;
+            return 0;
         }
 
         // Already on top floor?
         if (pos.getPlane() == EctofuntusConstants.GRINDER_PLANE) {
             ScriptLogger.info(script.getScript(), "Arrived on top floor");
             currentState = State.USE_BONES_ON_HOPPER;
-            return randomDelay(300, 500);
+            return 0;
         }
 
         // If in basement, need to go up twice
         if (EctofuntusConstants.isInSlimeDungeon(pos)) {
             ScriptLogger.info(script.getScript(), "In basement - need to climb up to ground floor first");
             RSObject stairs = findStairsFromBasement();
-            if (stairs != null) {
-                stairs.interact(EctofuntusConstants.ACTION_CLIMB_UP);
+            if (stairs != null && stairs.interact(EctofuntusConstants.ACTION_CLIMB_UP)) {
                 script.pollFramesHuman(() -> {
                     WorldPosition newPos = script.getWorldPosition();
                     return newPos != null && !EctofuntusConstants.isInSlimeDungeon(newPos);
-                }, EctofuntusConstants.PLANE_CHANGE_TIMEOUT);
+                }, RandomUtils.uniformRandom(4000, 6000), true);
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         // On ground floor - find stairs to top floor
@@ -261,9 +253,8 @@ public class GrindBonesTask {
 
             if (handleRetryWithEscalation("Finding top floor stairs")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(800, 1200);
+            return 0;
         }
 
         ScriptLogger.actionAttempt(script.getScript(), "Climbing up to top floor");
@@ -272,29 +263,26 @@ public class GrindBonesTask {
         if (!interacted) {
             if (handleRetryWithEscalation("Stair interaction")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
-        // Wait for plane change
+        // Wait for plane change with human reaction delay on arrival
         boolean planeChanged = script.pollFramesHuman(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && newPos.getPlane() == EctofuntusConstants.GRINDER_PLANE;
-        }, EctofuntusConstants.PLANE_CHANGE_TIMEOUT);
+        }, RandomUtils.uniformRandom(4000, 6000), true);
 
         if (planeChanged) {
             ScriptLogger.actionSuccess(script.getScript(), "Arrived on top floor");
             retryCount = 0;
             currentState = State.USE_BONES_ON_HOPPER;
-            return randomDelay(400, 700);
         } else {
             if (handleRetryWithEscalation("Plane change after stairs")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
         }
+        return 0;
     }
 
     /**
@@ -306,7 +294,7 @@ public class GrindBonesTask {
         if (config == null) {
             ScriptLogger.error(script.getScript(), "Config not available");
             script.stop();
-            return 1000;
+            return 0;
         }
 
         // Find bones in inventory (use first available bone type if mixed mode)
@@ -328,7 +316,7 @@ public class GrindBonesTask {
             } else {
                 script.setShouldBank(true);
             }
-            return randomDelay(400, 600);
+            return 0;
         }
 
         // Find the hopper/loader
@@ -336,9 +324,8 @@ public class GrindBonesTask {
         if (hopper == null) {
             if (handleRetryWithEscalation("Finding bone hopper")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(600, 1000);
+            return 0;
         }
 
         ScriptLogger.actionAttempt(script.getScript(), "Using bones on hopper");
@@ -348,13 +335,12 @@ public class GrindBonesTask {
         if (!selected) {
             if (handleRetryWithEscalation("Selecting bones")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(400, 600);
+            return 0;
         }
 
-        // Small delay for item selection visual
-        script.pollFramesHuman(() -> true, 300);
+        // Short delay between selecting bone and clicking hopper (focused action)
+        script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(80, 400, 150, 50));
 
         // Now click the hopper
         boolean usedOnHopper = hopper.interact(createUseOnLoaderMenuHook());
@@ -369,55 +355,48 @@ public class GrindBonesTask {
         if (!usedOnHopper) {
             if (handleRetryWithEscalation("Using bones on hopper")) {
                 script.stop();
-                return 1000;
             }
-            return randomDelay(400, 600);
+            return 0;
         }
-
-        // Wait briefly for the grinding to start
-        script.pollFramesHuman(() -> true, 500);
 
         ScriptLogger.info(script.getScript(), "Bones loaded - waiting for grinding to complete");
         retryCount = 0;
-        grindingStartTime = System.currentTimeMillis();
         currentState = State.WAIT_FOR_GRINDING;
-        return randomDelay(500, 800);
+        return 0;
     }
 
     /**
      * Waits for the grinding process to complete by monitoring empty pot count.
      * Grinding is complete when all empty pots are used (pots are the limiting factor).
      * This handles the case where bones > pots (uses available pots, leaves excess bones).
+     *
+     * Uses pollFramesHuman to inject a humanized reaction delay after detecting completion,
+     * simulating the player noticing grinding has finished before continuing.
      */
     private int handleWaitForGrinding() {
-        int currentBoneCount = getTotalBoneCount();
-        int currentBonemeal = getBonemealCount();
-        int emptyPotCount = getInventoryCount(EctofuntusConstants.EMPTY_POT);
-
-        ScriptLogger.debug(script.getScript(), "Grinding progress: " + currentBoneCount + " bones, " +
-            emptyPotCount + " empty pots, " + currentBonemeal + " bonemeal (expected " + expectedBonemealCount + ")");
-
-        // Grinding complete when all empty pots are used (pots are limiting factor)
-        if (emptyPotCount == 0) {
-            ScriptLogger.info(script.getScript(), "Grinding complete: " + currentBonemeal + " bonemeal pots" +
-                (currentBoneCount > 0 ? " (" + currentBoneCount + " excess bones)" : ""));
-            currentState = State.COMPLETE;
-            return randomDelay(300, 500);
-        }
-
         // Calculate dynamic timeout: 10s per bone (total)
         int initialBones = expectedBonemealCount;  // Set in handleCheckLocation
         long dynamicTimeout = (long) initialBones * EctofuntusConstants.GRIND_TIME_PER_BONE_MS;
 
-        if (grindingStartTime > 0 && System.currentTimeMillis() - grindingStartTime > dynamicTimeout) {
-            ScriptLogger.warning(script.getScript(), "Grinding timeout after " + (dynamicTimeout / 1000) + "s - " + currentBoneCount + " bones still remaining");
-            // Try using bones on hopper again
-            currentState = State.USE_BONES_ON_HOPPER;
-            return randomDelay(600, 1000);
-        }
+        // pollFramesHuman: waits for condition then injects human-like reaction delay
+        // ignoreTasks=true: suppress break/hop/afk during grinding
+        boolean grindingComplete = script.pollFramesHuman(() ->
+            getInventoryCount(EctofuntusConstants.EMPTY_POT) == 0, (int) dynamicTimeout, true
+        );
 
-        // Still grinding - continue waiting
-        return GRINDING_POLL_INTERVAL;
+        if (grindingComplete) {
+            int currentBonemeal = getBonemealCount();
+            int currentBoneCount = getTotalBoneCount();
+            ScriptLogger.info(script.getScript(), "Grinding complete: " + currentBonemeal + " bonemeal pots" +
+                (currentBoneCount > 0 ? " (" + currentBoneCount + " excess bones)" : ""));
+            currentState = State.COMPLETE;
+            return 0;
+        } else {
+            int currentBoneCount = getTotalBoneCount();
+            ScriptLogger.warning(script.getScript(), "Grinding timeout after " + (dynamicTimeout / 1000) + "s - " + currentBoneCount + " bones still remaining");
+            currentState = State.USE_BONES_ON_HOPPER;
+            return 0;
+        }
     }
 
     /**
@@ -435,7 +414,7 @@ public class GrindBonesTask {
             ScriptLogger.warning(script.getScript(), "Still have " + emptyPotCount +
                 " empty pots and " + remainingBones + " bones - returning to grind");
             currentState = State.USE_BONES_ON_HOPPER;
-            return randomDelay(400, 600);
+            return 0;
         }
 
         // Log if we have excess bones (more bones than pots - this is OK)
@@ -451,9 +430,12 @@ public class GrindBonesTask {
         // Reset for next cycle
         reset();
 
-        return randomDelay(300, 500);
+        return 0;
     }
 
+    /**
+     * Ensures the player is near the altar start position via ectophial teleport.
+     */
     private boolean ensureNearAltarStart() {
         WorldPosition startPos = script.getWorldPosition();
         if (startPos != null && EctofuntusConstants.isNearAltar(startPos)) {
@@ -480,12 +462,11 @@ public class GrindBonesTask {
             return false;
         }
 
-        // Wait for position change (design doc: 500-1000ms timeout)
-        int timeout = 500 + ThreadLocalRandom.current().nextInt(500);
-        boolean posChanged = script.pollFramesHuman(() -> {
+        // Wait for position change - teleport handler already handled visible animation
+        boolean posChanged = script.pollFramesUntil(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && !newPos.equals(startPos);
-        }, timeout);
+        }, RandomUtils.uniformRandom(500, 1000));
 
         if (!posChanged) {
             ScriptLogger.debug(script.getScript(), "Position unchanged after teleport - may still be animating");
@@ -541,7 +522,8 @@ public class GrindBonesTask {
     private RSObject findHopper() {
         return script.getObjectManager().getRSObject(
             obj -> obj.getName() != null &&
-                   obj.getName().equals(EctofuntusConstants.BONE_HOPPER_NAME)
+                   obj.getName().equalsIgnoreCase(EctofuntusConstants.BONE_HOPPER_NAME) &&
+                   obj.canReach()
         );
     }
 
@@ -585,7 +567,8 @@ public class GrindBonesTask {
     private RSObject findStairsToTopFloor() {
         return script.getObjectManager().getRSObject(
             obj -> obj.getName() != null &&
-                   obj.getName().equals(EctofuntusConstants.STAIRCASE_NAME) &&
+                   obj.getName().equalsIgnoreCase(EctofuntusConstants.STAIRCASE_NAME) &&
+                   obj.canReach() &&
                    hasAction(obj, EctofuntusConstants.ACTION_CLIMB_UP)
         );
     }
@@ -596,7 +579,8 @@ public class GrindBonesTask {
     private RSObject findStairsFromBasement() {
         return script.getObjectManager().getRSObject(
             obj -> obj.getName() != null &&
-                   obj.getName().equals(EctofuntusConstants.STAIRS_NAME) &&
+                   obj.getName().equalsIgnoreCase(EctofuntusConstants.STAIRS_NAME) &&
+                   obj.canReach() &&
                    hasAction(obj, EctofuntusConstants.ACTION_CLIMB_UP)
         );
     }
@@ -709,10 +693,4 @@ public class GrindBonesTask {
         return false; // Can continue
     }
 
-    /**
-     * Generates a random delay between min and max values.
-     */
-    private int randomDelay(int min, int max) {
-        return min + ThreadLocalRandom.current().nextInt(max - min);
-    }
 }

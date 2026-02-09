@@ -15,6 +15,7 @@ public class EctoConfig {
     private final boolean xpFailsafePauseDuringLogout;
     private final boolean debugLogging;
     private final boolean useAllBonesInTab;
+    private final boolean runePouchModeEnabled;
 
     public EctoConfig(
         BoneType boneType,
@@ -23,7 +24,8 @@ public class EctoConfig {
         int xpFailsafeTimeoutMinutes,
         boolean xpFailsafePauseDuringLogout,
         boolean debugLogging,
-        boolean useAllBonesInTab
+        boolean useAllBonesInTab,
+        boolean runePouchModeEnabled
     ) {
         this.boneType = boneType;
         this.bankLocation = bankLocation;
@@ -32,6 +34,7 @@ public class EctoConfig {
         this.xpFailsafePauseDuringLogout = xpFailsafePauseDuringLogout;
         this.debugLogging = debugLogging;
         this.useAllBonesInTab = useAllBonesInTab;
+        this.runePouchModeEnabled = runePouchModeEnabled;
     }
 
     /**
@@ -45,7 +48,8 @@ public class EctoConfig {
             5,      // 5 minute timeout
             true,   // Pause during logout
             false,  // Debug logging off
-            false   // Use all bones in tab off (single bone mode default)
+            false,  // Use all bones in tab off (single bone mode default)
+            false   // Rune pouch mode disabled by default
         );
     }
 
@@ -81,6 +85,13 @@ public class EctoConfig {
         return useAllBonesInTab;
     }
 
+    /**
+     * Returns true if teleport runes are expected to come from rune pouch.
+     */
+    public boolean isRunePouchModeEnabled() {
+        return runePouchModeEnabled;
+    }
+
     @Override
     public String toString() {
         return "EctoConfig{" +
@@ -90,6 +101,7 @@ public class EctoConfig {
             " (" + xpFailsafeTimeoutMinutes + "m)" +
             ", debugLog=" + debugLogging +
             ", useAllBones=" + useAllBonesInTab +
+            ", runePouchMode=" + runePouchModeEnabled +
             '}';
     }
 }

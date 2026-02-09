@@ -74,6 +74,15 @@ public final class EctofuntusConstants {
     /** Empty ectophial - needs refilling at Pool of Slime */
     public static final int ECTOPHIAL_EMPTY = ItemID.ECTOPHIAL_4252;  // 4252
 
+    /** Rune pouch item ID */
+    public static final int RUNE_POUCH = ItemID.RUNE_POUCH;
+
+    /** Divine rune pouch item ID */
+    public static final int DIVINE_RUNE_POUCH = ItemID.DIVINE_RUNE_POUCH;
+
+    /** Accepted rune pouch item IDs for rune pouch mode */
+    public static final Set<Integer> RUNE_POUCH_IDS = Set.of(RUNE_POUCH, DIVINE_RUNE_POUCH);
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Region & Planes
     // ═══════════════════════════════════════════════════════════════════════════

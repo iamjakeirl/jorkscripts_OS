@@ -74,7 +74,7 @@ public interface EctofuntusScript {
     /**
      * Gets the supply baseline (empty pot/bucket count after banking).
      * Used by WorshipTask to detect completion when empties return to baseline.
-     * @return baseline count (8 default, 9 if wearable teleport)
+     * @return baseline count (always 8)
      */
     int getSupplyBaseline();
 
@@ -120,12 +120,30 @@ public interface EctofuntusScript {
     boolean pollFramesUntil(BooleanSupplier condition, int timeout);
 
     /**
+     * Polls until a condition is met or timeout expires.
+     * @param condition The condition to check
+     * @param timeout Maximum time to wait in milliseconds
+     * @param ignoreTasks When true, suppresses break/hop/afk interruptions
+     * @return true if condition was met, false if timeout
+     */
+    boolean pollFramesUntil(BooleanSupplier condition, int timeout, boolean ignoreTasks);
+
+    /**
      * Polls with human-like delays after condition is met.
      * @param condition The condition to check
      * @param timeout Maximum time to wait in milliseconds
      * @return true if condition was met, false if timeout
      */
     boolean pollFramesHuman(BooleanSupplier condition, int timeout);
+
+    /**
+     * Polls with human-like delays after condition is met.
+     * @param condition The condition to check
+     * @param timeout Maximum time to wait in milliseconds
+     * @param ignoreTasks When true, suppresses break/hop/afk interruptions
+     * @return true if condition was met, false if timeout
+     */
+    boolean pollFramesHuman(BooleanSupplier condition, int timeout, boolean ignoreTasks);
 
     // ───────────────────────────────────────────────────────────────────────────
     // Script Control
