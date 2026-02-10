@@ -164,7 +164,7 @@ public class MyScript extends AbstractMetricsScript {
     @Override
     protected void onMetricsStart() {
         registerMetric("Trips", this::getTrips);
-        enableXPTracking(SkillType.HUNTER, 220);
+        enableXPTracking(SkillType.HUNTER);
     }
 }
 ```

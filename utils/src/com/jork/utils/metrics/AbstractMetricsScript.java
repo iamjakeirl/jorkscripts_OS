@@ -7,6 +7,8 @@ import com.jork.utils.metrics.core.MetricType;
 import com.jork.utils.metrics.display.MetricsPanelConfig;
 import com.osmb.api.ui.component.tabs.skill.SkillType;
 
+import com.osmb.api.ui.GameState;
+
 import java.util.function.Supplier;
 
 /**
@@ -21,6 +23,11 @@ public abstract class AbstractMetricsScript extends Script {
     
     public AbstractMetricsScript(Object scriptCore) {
         super(scriptCore);
+    }
+
+    @Override
+    public boolean trackXP() {
+        return true;
     }
     
     @Override
@@ -69,6 +76,27 @@ public abstract class AbstractMetricsScript extends Script {
         // Default implementation does nothing
     }
     
+    @Override
+    public void onGameStateChanged(GameState newGameState) {
+        super.onGameStateChanged(newGameState);
+
+        if (newGameState != null && newGameState != GameState.LOGGED_IN) {
+            pauseXPFailsafeTimer();
+        } else if (newGameState == GameState.LOGGED_IN) {
+            resumeXPFailsafeTimer();
+        }
+
+        onMetricsGameStateChanged(newGameState);
+    }
+
+    /**
+     * Called after metrics handle game state changes (timer pause/resume).
+     * Subclasses should override this instead of onGameStateChanged().
+     */
+    protected void onMetricsGameStateChanged(GameState newGameState) {
+        // Default implementation does nothing
+    }
+
     public void onStop() {
         // Clear metrics on stop
         if (metrics != null) {
@@ -117,13 +145,12 @@ public abstract class AbstractMetricsScript extends Script {
     }
     
     /**
-     * Enables XP tracking for a specific skill with sprite ID
+     * Enables XP tracking for a specific skill using OSMB's native XP tracker.
      * @param skill The skill to track
-     * @param spriteId The sprite ID for the skill icon (e.g., 220 for Hunter)
      */
-    protected void enableXPTracking(SkillType skill, int spriteId) {
+    protected void enableXPTracking(SkillType skill) {
         if (metrics != null) {
-            metrics.registerXPTracking(skill, spriteId);
+            metrics.registerXPTracking(skill);
         }
     }
     

@@ -9,7 +9,7 @@ dependencies {
 }
 
 jar {
-    archiveBaseName = 'jorkTofuntus'
+    archiveBaseName = 'FireGiantWaterStrike'
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
 
     manifest {
@@ -40,7 +40,7 @@ jar {
             into targetDir
         }
 
-        println "✅ Copied ${jarFile.name} to ${targetDir.absolutePath}"
+        println "Copied ${jarFile.name} to ${targetDir.absolutePath}"
     }
 }
 

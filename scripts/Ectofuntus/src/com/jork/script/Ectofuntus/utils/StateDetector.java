@@ -4,33 +4,25 @@ import com.jork.script.Ectofuntus.EctofuntusConstants;
 import com.jork.script.Ectofuntus.EctofuntusScript;
 import com.jork.script.Ectofuntus.config.BoneType;
 import com.jork.script.Ectofuntus.config.EctoConfig;
-import com.jork.utils.ExceptionUtils;
 import com.jork.utils.ScriptLogger;
-import com.jork.utils.teleport.TeleportHandler;
-import com.jork.utils.teleport.TeleportHandlerFactory;
-import com.osmb.api.item.ItemGroupResult;
 import com.osmb.api.location.position.types.WorldPosition;
-
+import com.osmb.api.scene.RSObject;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
- * Centralized state detection utility for the Ectofuntus script.
- * Answers "where am I and what do I have?" by examining player location and inventory holistically.
- *
- * Purpose: Enable context-aware recovery decisions. A centralized utility allows consistent state
- * detection across the script, supporting smart recovery from edge cases (logout, partial inventory,
- * unexpected location).
- *
- * Key insight from CONTEXT.md: "bone count + bone dust count together represent 'bones processed'"
- *
- * @author jork
+ * Detects current location and inventory state for recovery and task routing.
  */
 public class StateDetector {
 
-    private final EctofuntusScript script;
+    private static final Set<String> BANK_OBJECT_NAMES = Set.of(
+        "Bank booth", "Bank chest", "Grand Exchange booth", "Bank", "Chest"
+    );
+    private static final Set<String> BANK_ACTIONS = Set.of("Bank", "Use", "Open");
 
-    // Cached teleport handler for bank location detection
-    private TeleportHandler cachedBankHandler;
+    private final EctofuntusScript script;
 
     /**
      * Creates a state detector for the given script.
@@ -108,14 +100,28 @@ public class StateDetector {
             return InventoryState.UNKNOWN;
         }
 
-        // Get inventory counts
-        int bones = getTotalBoneCount();
-        int boneDust = getBonemealCount();
-        int slime = getInventoryCount(EctofuntusConstants.BUCKET_OF_SLIME);
-        int emptyPots = getInventoryCount(EctofuntusConstants.EMPTY_POT);
-        int emptyBuckets = getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
+        Set<Integer> boneIdsForCount = config.isUseAllBonesInTab()
+            ? BoneType.getAllItemIds()
+            : Set.of(config.getBoneType().getItemId());
+        Set<Integer> inventoryItemIds = new HashSet<>(boneIdsForCount);
+        inventoryItemIds.addAll(EctofuntusConstants.BONEMEAL_IDS);
+        inventoryItemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
+        inventoryItemIds.add(EctofuntusConstants.EMPTY_POT);
+        inventoryItemIds.add(EctofuntusConstants.EMPTY_BUCKET);
 
-        // Key insight: totalProgress = bones in any form (raw or processed)
+        var inventorySnapshot = InventoryQueries.snapshot(
+            script,
+            inventoryItemIds,
+            "StateDetector: Error taking inventory snapshot: "
+        );
+
+        int bones = InventoryQueries.amount(inventorySnapshot, boneIdsForCount);
+        int boneDust = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slime = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        int emptyPots = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
+        int emptyBuckets = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
+
+        // Total progress includes both raw bones and bonemeal.
         int totalProgress = bones + boneDust;
         int canWorship = Math.min(boneDust, slime);  // Limited by whichever is lower
 
@@ -180,32 +186,38 @@ public class StateDetector {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Checks if the player is near a bank location.
-     * Uses the configured bank teleport handler's destination area.
+     * Checks if a reachable bank object exists in the loaded scene.
      *
-     * @param pos The position to check
-     * @return true if near bank
+     * @param pos The player's current position (unused, kept for signature compat)
+     * @return true if a reachable bank object is nearby
      */
     private boolean isNearBank(WorldPosition pos) {
-        // Lazy-initialize bank handler for location checking
-        if (cachedBankHandler == null) {
-            EctoConfig config = script.getConfig();
-            if (config == null) {
-                return false;
-            }
-
-            cachedBankHandler = TeleportHandlerFactory.fromBankLocationName(
-                script.getScript(),
-                config.getBankLocation().getDisplayName()
-            );
-
-            if (cachedBankHandler == null) {
-                ScriptLogger.debug(script.getScript(), "StateDetector: Could not create bank handler for location check");
-                return false;
-            }
+        if (script.getScript().getObjectManager() == null) {
+            return false;
         }
 
-        return cachedBankHandler.isAtDestination(pos);
+        List<RSObject> bankObjects = script.getScript().getObjectManager().getObjects(obj -> {
+            if (obj == null || obj.getName() == null) {
+                return false;
+            }
+            String name = obj.getName();
+            boolean isBankObject = BANK_OBJECT_NAMES.stream()
+                .anyMatch(bankName -> name.equalsIgnoreCase(bankName));
+            if (!isBankObject) {
+                return false;
+            }
+            String[] actions = obj.getActions();
+            if (actions == null) {
+                return false;
+            }
+            boolean hasAction = Arrays.stream(actions)
+                .filter(a -> a != null)
+                .anyMatch(a -> BANK_ACTIONS.stream()
+                    .anyMatch(bankAction -> a.equalsIgnoreCase(bankAction)));
+            return hasAction && obj.canReach();
+        });
+
+        return bankObjects != null && !bankObjects.isEmpty();
     }
 
     /**
@@ -219,85 +231,6 @@ public class StateDetector {
             return false;
         }
         return pos.distanceTo(EctofuntusConstants.BONE_HOPPER_POS) <= 10;
-    }
-
-    /**
-     * Checks if the player is near the Pool of Slime.
-     *
-     * @param pos The position to check
-     * @return true if near pool
-     */
-    private boolean isNearPool(WorldPosition pos) {
-        return pos.distanceTo(EctofuntusConstants.POOL_OF_SLIME_POS) <= 10;
-    }
-
-    /**
-     * Gets total bone count based on config mode.
-     * If useAllBonesInTab is enabled, counts all bone types.
-     * Otherwise counts only the configured bone type.
-     */
-    private int getTotalBoneCount() {
-        EctoConfig config = script.getConfig();
-        if (config == null) return 0;
-
-        if (config.isUseAllBonesInTab()) {
-            // Single search for all bone types to avoid double-counting
-            try {
-                var wm = script.getWidgetManager();
-                if (wm == null || wm.getInventory() == null) return 0;
-                java.util.Set<Integer> allBoneIds = BoneType.getAllItemIds();
-                var search = wm.getInventory().search(allBoneIds);
-                return search != null ? search.getAmount(allBoneIds) : 0;
-            } catch (Exception e) {
-                ExceptionUtils.rethrowIfTaskInterrupted(e);
-                ScriptLogger.debug(script.getScript(), "Error counting bones: " + e.getMessage());
-                return 0;
-            }
-        } else {
-            // Count only configured bone type
-            return getInventoryCount(config.getBoneType().getItemId());
-        }
-    }
-
-    /**
-     * Gets the count of bonemeal in inventory (all variants).
-     * Uses a single search call to avoid double-counting visually identical items.
-     */
-    private int getBonemealCount() {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-            var search = wm.getInventory().search(EctofuntusConstants.BONEMEAL_IDS);
-            return search != null ? search.getAmount(EctofuntusConstants.BONEMEAL_IDS) : 0;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "StateDetector: Error counting bonemeal: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Gets the count of an item in inventory.
-     * Handles exceptions gracefully and rethrows TaskInterruptedException.
-     *
-     * @param itemId The item ID to count
-     * @return The count of the item, or 0 if unavailable
-     */
-    private int getInventoryCount(int itemId) {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-            ItemGroupResult search = wm.getInventory().search(Set.of(itemId));
-            return search != null ? search.getAmount(itemId) : 0;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "StateDetector: Error counting item " + itemId + ": " + e.getMessage());
-            return 0;
-        }
     }
 
 }

@@ -7,6 +7,7 @@ import com.jork.utils.teleport.TeleportHandler;
 import com.jork.utils.teleport.TeleportResult;
 import com.osmb.api.location.position.types.WorldPosition;
 import com.osmb.api.script.Script;
+import com.osmb.api.ui.spellbook.InvalidSpellbookTypeException;
 import com.osmb.api.ui.tabs.Spellbook;
 import com.osmb.api.ui.spellbook.Spell;
 import com.osmb.api.ui.spellbook.SpellNotFoundException;
@@ -211,18 +212,28 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
         ScriptLogger.debug(script, "Selecting spell: " + spell.getName());
 
         try {
-            // Select the teleport spell with CHANGE_TAB result type
-            // CHANGE_TAB waits until the tab changes after casting (ideal for teleports)
-            boolean selected = spellbook.selectSpell(spell, Spellbook.ResultType.CHANGE_TAB);
+            // null ResultType = fire-and-forget click; verifyArrival() confirms landing
+            String menuOption = getSpellMenuOption();
+            boolean selected = menuOption == null
+                ? spellbook.selectSpell(spell, null)
+                : spellbook.selectSpell(spell, menuOption, null);
 
             if (!selected) {
-                ScriptLogger.warning(script, "Failed to select spell: " + spell.getName());
+                if (menuOption == null) {
+                    ScriptLogger.warning(script, "Failed to select spell: " + spell.getName());
+                } else {
+                    ScriptLogger.warning(script, "Failed to select spell option '" + menuOption +
+                        "' for: " + spell.getName());
+                }
                 return TeleportResult.INTERACTION_FAILED;
             }
         } catch (SpellNotFoundException e) {
             ScriptLogger.warning(script, "Spell not found in spellbook: " + spell.getName() +
                 " - may be wrong spellbook or insufficient runes/level");
             return TeleportResult.ITEM_NOT_FOUND;  // Reusing this for "spell not available"
+        } catch (InvalidSpellbookTypeException e) {
+            ScriptLogger.warning(script, "Invalid spellbook/menu option for spell: " + spell.getName());
+            return TeleportResult.ITEM_NOT_FOUND;
         } catch (Exception e) {
             ExceptionUtils.rethrowIfTaskInterrupted(e);
             ScriptLogger.warning(script, "Error selecting spell: " + e.getMessage());
@@ -272,5 +283,13 @@ public abstract class AbstractSpellTeleportHandler implements TeleportHandler {
      */
     protected Spell getSpell() {
         return spell;
+    }
+
+    /**
+     * Optional spell menu option for spell variants (e.g. Varrock -> Grand Exchange).
+     * Return null to use default left-click behavior.
+     */
+    protected String getSpellMenuOption() {
+        return null;
     }
 }

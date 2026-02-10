@@ -4,7 +4,6 @@ package com.jork.script.Ectofuntus.config;
  * Configuration class for Ectofuntus script settings.
  * Holds user-selected options from the UI.
  *
- * @author jork
  */
 public class EctoConfig {
 
@@ -16,6 +15,8 @@ public class EctoConfig {
     private final boolean debugLogging;
     private final boolean useAllBonesInTab;
     private final boolean runePouchModeEnabled;
+    private final int tokenCollectMin;
+    private final int tokenCollectMax;
 
     public EctoConfig(
         BoneType boneType,
@@ -25,7 +26,9 @@ public class EctoConfig {
         boolean xpFailsafePauseDuringLogout,
         boolean debugLogging,
         boolean useAllBonesInTab,
-        boolean runePouchModeEnabled
+        boolean runePouchModeEnabled,
+        int tokenCollectMin,
+        int tokenCollectMax
     ) {
         this.boneType = boneType;
         this.bankLocation = bankLocation;
@@ -35,6 +38,8 @@ public class EctoConfig {
         this.debugLogging = debugLogging;
         this.useAllBonesInTab = useAllBonesInTab;
         this.runePouchModeEnabled = runePouchModeEnabled;
+        this.tokenCollectMin = tokenCollectMin;
+        this.tokenCollectMax = tokenCollectMax;
     }
 
     /**
@@ -45,11 +50,13 @@ public class EctoConfig {
             BoneType.DRAGON_BONES,
             BankLocation.VARROCK,
             true,   // XP failsafe enabled
-            5,      // 5 minute timeout
+            10,     // 10 minute timeout
             true,   // Pause during logout
             false,  // Debug logging off
-            false,  // Use all bones in tab off (single bone mode default)
-            false   // Rune pouch mode disabled by default
+            true,   // Use all bones in tab (mixed mode default)
+            false,  // Rune pouch mode disabled by default
+            100,    // Token collect min
+            200     // Token collect max
         );
     }
 
@@ -92,6 +99,14 @@ public class EctoConfig {
         return runePouchModeEnabled;
     }
 
+    public int getTokenCollectMin() {
+        return tokenCollectMin;
+    }
+
+    public int getTokenCollectMax() {
+        return tokenCollectMax;
+    }
+
     @Override
     public String toString() {
         return "EctoConfig{" +
@@ -102,6 +117,7 @@ public class EctoConfig {
             ", debugLog=" + debugLogging +
             ", useAllBones=" + useAllBonesInTab +
             ", runePouchMode=" + runePouchModeEnabled +
+            ", tokenCollect=" + tokenCollectMin + "-" + tokenCollectMax +
             '}';
     }
 }

@@ -1,223 +1,122 @@
 package com.jork.utils.metrics.providers;
 
 import com.osmb.api.script.Script;
-import com.osmb.api.shape.Rectangle;
 import com.osmb.api.trackers.experience.XPTracker;
-import com.osmb.api.ui.component.ComponentSearchResult;
-import com.osmb.api.ui.component.minimap.xpcounter.XPDropsComponent;
 import com.osmb.api.ui.component.tabs.skill.SkillType;
-import com.osmb.api.utils.RandomUtils;
-import com.osmb.api.visual.color.ColorModel;
-import com.osmb.api.visual.color.tolerance.impl.SingleThresholdComparator;
-import com.osmb.api.visual.image.SearchableImage;
 import com.jork.utils.ExceptionUtils;
 import com.jork.utils.ScriptLogger;
 
+import java.util.Map;
+
 /**
- * OCR-based XP metric provider that reads XP values from the game display.
- * Works around the unimplemented getSkillExperience() API by using visual detection.
+ * XP metric provider that delegates to OSMB's native XPTracker system.
+ * The native tracker handles all XP reading via XPDropsListener internally.
+ * This provider adds a pausable "time since last XP gain" timer for failsafe support.
  */
 public class XPMetricProvider {
     private Script script;
     private SkillType skillType;
-    private int spriteId;
-    private SearchableImage skillSprite;
-    private XPDropsComponent xpDropsComponent;
     private XPTracker tracker;
-    private Integer lastKnownXP;
-    private int startingXP;
-    
+    private double lastKnownXP;
+    private double startingXP;
+    private boolean trackerWarningLogged = false;
+
     // Pausable timer implementation
-    private long accumulatedTimeMillis = 0;  // Time accumulated while logged in
-    private long sessionStartTime = 0;        // When current session started  
-    private boolean isPaused = false;         // Whether timer is paused
-    private boolean pauseDuringLogoutEnabled = true;  // Config option
-    
+    private long accumulatedTimeMillis = 0;
+    private long sessionStartTime = 0;
+    private boolean isPaused = false;
+    private boolean pauseDuringLogoutEnabled = true;
+
     /**
-     * Initializes the XP tracker for a specific skill using OCR
+     * Initializes the XP tracker for a specific skill using OSMB's native tracking.
      * @param script The script instance
      * @param skillType The skill to track
-     * @param spriteId The sprite ID for the skill icon (e.g., 220 for Hunter)
      */
-    public void initialize(Script script, SkillType skillType, int spriteId) {
+    public void initialize(Script script, SkillType skillType) {
         this.script = script;
         this.skillType = skillType;
-        this.spriteId = spriteId;
-        
-        // Get XP drops component
-        this.xpDropsComponent = (XPDropsComponent) script.getWidgetManager().getComponent(XPDropsComponent.class);
-        
-        // Initialize skill sprite for detection
-        try {
-            // Script extends ScriptCore, so we can pass script directly
-            SearchableImage fullSprite = new SearchableImage(spriteId, script, 
-                new SingleThresholdComparator(15), ColorModel.RGB);
-            // Use right half of sprite like the example
-            this.skillSprite = fullSprite.subImage(fullSprite.width / 2, 0, 
-                fullSprite.width / 2, fullSprite.height);
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.warning(script, "Failed to load sprite " + spriteId + ": " + e.getMessage());
-        }
-        
-        // Ensure XP counter is visible
-        ensureXPCounterVisible();
-        
-        // Initialize the pausable timer
+
+        // Start the pausable timer
         this.sessionStartTime = System.currentTimeMillis();
         this.accumulatedTimeMillis = 0;
         this.isPaused = false;
-        
-        // Read initial XP
-        Integer initialXP = readCurrentXP();
-        if (initialXP != null) {
-            this.startingXP = initialXP;
-            this.lastKnownXP = initialXP;
-            // Initialize tracker with 0 to track only gains, not total XP
-            this.tracker = new XPTracker(script, 0);
-            ScriptLogger.info(script, skillType + " XP Tracker initialized. Starting XP: " + initialXP);
+
+        // Attempt to acquire native tracker
+        acquireNativeTracker();
+
+        if (tracker != null) {
+            this.startingXP = tracker.getXp();
+            this.lastKnownXP = startingXP;
+            ScriptLogger.info(script, skillType + " XP Tracker initialized (native). Starting XP: " + (int) startingXP);
         } else {
-            // Initialize with 0 if we can't read XP
             this.startingXP = 0;
             this.lastKnownXP = 0;
-            this.tracker = new XPTracker(script, 0);
-            ScriptLogger.warning(script, "Could not read initial XP for " + skillType + ", starting at 0");
+            ScriptLogger.warning(script, "Native XP tracker not yet available for " + skillType + " - will retry on update");
         }
     }
-    
+
     /**
-     * Ensures the XP counter display is active and visible
+     * Attempts to acquire the native XPTracker from OSMB's tracker map.
      */
-    private boolean ensureXPCounterVisible() {
-        if (xpDropsComponent == null) {
-            ScriptLogger.warning(script, "XPDropsComponent is null");
-            return false;
-        }
-        
-        Rectangle bounds = xpDropsComponent.getBounds();
-        if (bounds == null) {
-            ScriptLogger.warning(script, "Failed to get XP drops component bounds");
-            return false;
-        }
-        
-        ComponentSearchResult<Integer> result = xpDropsComponent.getResult();
-        if (result == null || result.getComponentImage().getGameFrameStatusType() != 1) {
-            ScriptLogger.info(script, "XP drops component is not open, attempting to open it");
-            
-            // Tap to open the XP drops component
-            script.getFinger().tap(bounds);
-            
-            // Wait for it to open
-            boolean succeeded = script.pollFramesHuman(() -> {
-                ComponentSearchResult<Integer> res = xpDropsComponent.getResult();
-                return res != null && res.getComponentImage().getGameFrameStatusType() == 1;
-            }, RandomUtils.uniformRandom(1500, 3000));
-            
-            if (succeeded) {
-                ScriptLogger.info(script, "XP drops component opened successfully");
-            } else {
-                ScriptLogger.warning(script, "Failed to open XP drops component");
-            }
-            
-            return succeeded;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Reads the current XP value using OCR
-     */
-    private Integer readCurrentXP() {
-        Rectangle bounds = getXPDropsBounds();
-        if (bounds == null) {
-            return null;
-        }
-        
-        // Check if our skill icon is present
-        if (skillSprite != null) {
-            boolean isCorrectSkill = script.getImageAnalyzer().findLocation(bounds, skillSprite) != null;
-            if (!isCorrectSkill) {
-                // Not showing our skill, return last known value
-                return lastKnownXP;
-            }
-        }
-        
-        // Use OCR to read the XP value
-        String xpText = script.getOCR().getText(com.osmb.api.visual.ocr.fonts.Font.SMALL_FONT, bounds, -1)
-            .replaceAll("[^0-9]", "");
-        
-        if (xpText.isEmpty()) {
-            return null;
-        }
-        
+    private void acquireNativeTracker() {
+        if (tracker != null) return;
+
         try {
-            return Integer.parseInt(xpText);
-        } catch (NumberFormatException e) {
-            ScriptLogger.warning(script, "Failed to parse XP text: " + xpText);
-            return null;
+            Map<SkillType, XPTracker> trackers = script.getXPTrackers();
+            if (trackers != null) {
+                this.tracker = trackers.get(skillType);
+            }
+        } catch (Exception e) {
+            ExceptionUtils.rethrowIfTaskInterrupted(e);
+        }
+
+        if (tracker != null && trackerWarningLogged) {
+            ScriptLogger.info(script, "Native XP tracker acquired for " + skillType);
+            trackerWarningLogged = false;
         }
     }
-    
+
     /**
-     * Gets the bounds of the XP drops area
-     */
-    private Rectangle getXPDropsBounds() {
-        if (xpDropsComponent == null) {
-            return null;
-        }
-        
-        Rectangle bounds = xpDropsComponent.getBounds();
-        if (bounds == null) {
-            return null;
-        }
-        
-        ComponentSearchResult<Integer> result = xpDropsComponent.getResult();
-        if (result == null || result.getComponentImage().getGameFrameStatusType() != 1) {
-            return null;
-        }
-        
-        // Return the area where XP text appears (to the left of the XP drops button)
-        return new Rectangle(bounds.x - 140, bounds.y - 1, 119, 38);
-    }
-    
-    /**
-     * Updates the current XP from the game display
+     * Updates by polling the native tracker for XP changes.
+     * Resets the pausable timer when XP gain is detected.
      */
     public void update() {
-        if (script == null || skillType == null || tracker == null) {
+        if (script == null || skillType == null) {
             return;
         }
-        
-        Integer currentXP = readCurrentXP();
-        if (currentXP != null && currentXP > 0) {
-            // First time seeing XP? Update starting point
-            if (startingXP == 0 && lastKnownXP == 0) {
-                startingXP = currentXP;
-                lastKnownXP = currentXP;
-                ScriptLogger.info(script, skillType + " XP tracking started at: " + currentXP);
+
+        // Retry acquiring native tracker if we don't have one yet
+        if (tracker == null) {
+            acquireNativeTracker();
+            if (tracker == null) {
+                if (!trackerWarningLogged) {
+                    ScriptLogger.warning(script, "Native XP tracker still unavailable for " + skillType);
+                    trackerWarningLogged = true;
+                }
                 return;
             }
-            
-            // Only update if we got a valid reading and XP increased
-            if (currentXP > lastKnownXP) {
-                // Only reset timer if not currently paused (e.g., not during break/hop preparation)
-                if (!isPaused) {
-                    accumulatedTimeMillis = 0;
-                    sessionStartTime = System.currentTimeMillis();
-                }
-                // Note: Don't change isPaused state here - only resumeTimer() should unpause
-                
-                double gained = currentXP - lastKnownXP;
-                tracker.incrementXp(gained);
-                int totalGained = currentXP - startingXP;
-                ScriptLogger.debug(script, skillType + " XP gained this tick: " + gained + 
-                                 " | Total gained: " + totalGained + " | Current XP: " + currentXP);
-            }
-            lastKnownXP = currentXP;
+            // Just acquired -- capture starting XP
+            startingXP = tracker.getXp();
+            lastKnownXP = startingXP;
+            ScriptLogger.info(script, skillType + " XP tracking started at: " + (int) startingXP);
+            return;
         }
+
+        double currentXP = tracker.getXp();
+
+        if (currentXP > lastKnownXP) {
+            // XP gained -- reset the pausable timer (only if not paused)
+            if (!isPaused) {
+                accumulatedTimeMillis = 0;
+                sessionStartTime = System.currentTimeMillis();
+            }
+
+            ScriptLogger.debug(script, skillType + " XP gained: " + (int)(currentXP - lastKnownXP) +
+                " | Total gained: " + (int)(currentXP - startingXP) + " | Current XP: " + (int) currentXP);
+        }
+        lastKnownXP = currentXP;
     }
-    
+
     /**
      * Gets the total XP gained since initialization
      */
@@ -225,9 +124,9 @@ public class XPMetricProvider {
         if (tracker != null) {
             return (int) tracker.getXpGained();
         }
-        return (lastKnownXP != null ? lastKnownXP : 0) - startingXP;
+        return 0;
     }
-    
+
     /**
      * Gets the XP per hour rate
      */
@@ -237,152 +136,128 @@ public class XPMetricProvider {
         }
         return 0;
     }
-    
+
     /**
-     * Gets the formatted time to next level using accurate OSRS XP data
+     * Gets the formatted time to next level
      */
     public String getTimeToLevel() {
-        if (lastKnownXP == null || lastKnownXP == 0) {
-            return "N/A";
+        if (tracker != null) {
+            String ttl = tracker.timeToNextLevelString();
+            return (ttl != null && !ttl.isEmpty()) ? ttl : "N/A";
         }
-        
-        // Get XP per hour from tracker (it calculates this correctly)
-        int xpPerHour = tracker != null ? tracker.getXpPerHour() : 0;
-        if (xpPerHour <= 0) {
-            return "N/A";
-        }
-        
-        // Calculate time to level using our accurate XP data
-        long timeMillis = XPLevelData.calculateTimeToLevel(lastKnownXP, xpPerHour);
-        if (timeMillis <= 0) {
-            return "N/A";
-        }
-        
-        return XPLevelData.formatTime(timeMillis);
+        return "N/A";
     }
-    
+
     /**
-     * Gets the time to next level with custom XP/hour rate using accurate OSRS XP data
+     * Gets the time to next level with custom XP/hour rate
      */
     public String getTimeToLevel(double xpPerHour) {
-        if (lastKnownXP == null || lastKnownXP == 0 || xpPerHour <= 0) {
-            return "N/A";
+        if (tracker != null && xpPerHour > 0) {
+            String ttl = tracker.timeToNextLevelString(xpPerHour);
+            return (ttl != null && !ttl.isEmpty()) ? ttl : "N/A";
         }
-        
-        // Calculate time to level using our accurate XP data
-        long timeMillis = XPLevelData.calculateTimeToLevel(lastKnownXP, (int) xpPerHour);
-        if (timeMillis <= 0) {
-            return "N/A";
-        }
-        
-        return XPLevelData.formatTime(timeMillis);
+        return "N/A";
     }
-    
+
     /**
-     * Gets the level progress percentage using accurate OSRS XP data
+     * Gets the level progress percentage
      */
     public int getLevelProgress() {
-        if (lastKnownXP == null || lastKnownXP == 0) {
-            return 0;
+        if (tracker != null) {
+            return tracker.getLevelProgressPercentage();
         }
-        
-        // Calculate progress using our accurate XP data
-        double progress = XPLevelData.getLevelProgress(lastKnownXP);
-        return (int) Math.round(progress);
+        return 0;
     }
-    
+
     /**
-     * Gets the current level using accurate OSRS XP data
+     * Gets the current level
      */
     public int getCurrentLevel() {
-        if (lastKnownXP == null || lastKnownXP == 0) {
-            return 1;
+        if (tracker != null) {
+            return tracker.getLevel();
         }
-        
-        // Get level using our accurate XP data
-        return XPLevelData.getLevelForXP(lastKnownXP);
+        return 1;
     }
-    
+
     /**
-     * Gets XP needed for next level using accurate OSRS XP data
+     * Gets XP needed for next level
      */
     public double getXPForNextLevel() {
-        if (lastKnownXP == null || lastKnownXP == 0) {
-            return 0;
+        if (tracker != null) {
+            return tracker.getXpForNextLevel();
         }
-        
-        // Get XP needed using our accurate XP data
-        return XPLevelData.getXPToNextLevel(lastKnownXP);
+        return 0;
     }
-    
+
     /**
-     * Resets the tracker (for new sessions)
+     * Resets the tracker for new sessions
      */
     public void reset() {
-        if (tracker != null && script != null) {
-            update(); // Get latest XP
-            startingXP = lastKnownXP != null ? lastKnownXP : 0;
-            // Reset tracker to 0 gains, not current XP total
-            tracker = new XPTracker(script, 0);
-            ScriptLogger.info(script, skillType + " XP Tracker reset. New starting XP: " + startingXP);
+        if (tracker != null) {
+            lastKnownXP = tracker.getXp();
+            startingXP = lastKnownXP;
+            ScriptLogger.info(script, skillType + " XP Tracker reset. New starting XP: " + (int) startingXP);
         }
+        accumulatedTimeMillis = 0;
+        sessionStartTime = System.currentTimeMillis();
+        isPaused = false;
     }
-    
+
     /**
      * Gets the raw XP tracker for advanced usage
      */
     public XPTracker getTracker() {
         return tracker;
     }
-    
+
     /**
      * Gets the last known XP value
      */
-    public Integer getLastKnownXP() {
+    public double getLastKnownXP() {
         return lastKnownXP;
     }
-    
+
     /**
      * Gets the starting XP value
      */
-    public int getStartingXP() {
+    public double getStartingXP() {
         return startingXP;
     }
-    
+
+    // ── Pausable timer (for XP failsafe) ────────────────────────────────
+
     /**
      * Sets whether the timer should pause during logout
-     * @param enabled Whether pause during logout is enabled
      */
     public void setPauseDuringLogout(boolean enabled) {
         this.pauseDuringLogoutEnabled = enabled;
     }
-    
+
     /**
      * Pauses the timer (for breaks/hops)
      */
     public void pauseTimer() {
         if (!pauseDuringLogoutEnabled || isPaused) return;
-        
+
         if (sessionStartTime > 0) {
             accumulatedTimeMillis += System.currentTimeMillis() - sessionStartTime;
             isPaused = true;
             sessionStartTime = 0;
         }
     }
-    
+
     /**
      * Resumes the timer after pause
      */
     public void resumeTimer() {
         if (!pauseDuringLogoutEnabled || !isPaused) return;
-        
+
         sessionStartTime = System.currentTimeMillis();
         isPaused = false;
     }
-    
+
     /**
      * Gets the time in milliseconds since the last XP gain
-     * @return Time elapsed since last XP gain in milliseconds
      */
     public long getTimeSinceLastXPGain() {
         if (isPaused) {
@@ -393,20 +268,18 @@ public class XPMetricProvider {
         }
         return 0;
     }
-    
+
     /**
      * Gets the formatted time since the last XP gain
-     * @return Formatted time string (HH:mm:ss.SSS)
      */
     public String getTimeSinceLastXPGainFormatted() {
         long timeElapsed = getTimeSinceLastXPGain();
-        
-        // Format as HH:mm:ss.SSS
+
         long hours = timeElapsed / 3600000;
         long minutes = (timeElapsed % 3600000) / 60000;
         long seconds = (timeElapsed % 60000) / 1000;
         long millis = timeElapsed % 1000;
-        
+
         return String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis);
     }
 }

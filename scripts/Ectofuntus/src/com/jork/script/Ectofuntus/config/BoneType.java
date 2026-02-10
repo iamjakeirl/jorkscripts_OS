@@ -4,7 +4,6 @@ package com.jork.script.Ectofuntus.config;
  * Enum representing different bone types for Ectofuntus training.
  * Contains item IDs and display names for each bone type.
  *
- * @author jork
  */
 public enum BoneType {
     BONES("Bones", 526),

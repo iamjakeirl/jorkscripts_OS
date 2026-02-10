@@ -2,15 +2,12 @@ package com.jork.script.Ectofuntus.tasks;
 
 import com.jork.script.Ectofuntus.EctofuntusConstants;
 import com.jork.script.Ectofuntus.EctofuntusScript;
-import com.jork.utils.ExceptionUtils;
+import com.jork.script.Ectofuntus.utils.InventoryQueries;
 import com.jork.utils.JorkTaps;
 import com.jork.utils.ScriptLogger;
 import com.jork.utils.teleport.TeleportHandlerFactory;
 import com.jork.utils.teleport.TeleportResult;
 import com.jork.utils.teleport.handlers.EctophialHandler;
-import com.osmb.api.input.MenuEntry;
-import com.osmb.api.input.MenuHook;
-import com.osmb.api.item.ItemGroupResult;
 import com.osmb.api.item.ItemSearchResult;
 import com.osmb.api.location.area.impl.RectangleArea;
 import com.osmb.api.location.position.types.WorldPosition;
@@ -22,17 +19,6 @@ import java.util.Set;
 
 /**
  * Handles slime collection in the basement of the Ectofuntus.
- *
- * State machine flow:
- * CHECK_LOCATION → NAVIGATE_TO_BASEMENT → FILL_BUCKETS → VERIFY_SLIME → COMPLETE
- *
- * Note: Ectophial refills automatically after teleporting. The ensureNearAltarStart()
- * method uses pixel analyzer to wait for the refill animation to complete before
- * proceeding with any actions.
- *
- * Priority: 3/4 (randomized with GrindBonesTask)
- *
- * @author jork
  */
 public class CollectSlimeTask {
 
@@ -147,8 +133,13 @@ public class CollectSlimeTask {
         int currentPlane = pos.getPlane();
         ScriptLogger.debug(script.getScript(), "CollectSlime: Current plane = " + currentPlane);
 
-        int slimeCount = getInventoryCount(EctofuntusConstants.BUCKET_OF_SLIME);
-        int emptyBuckets = getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
+        var inventorySnapshot = InventoryQueries.snapshot(
+            script,
+            Set.of(EctofuntusConstants.BUCKET_OF_SLIME, EctofuntusConstants.EMPTY_BUCKET),
+            "Error taking inventory snapshot: "
+        );
+        int slimeCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        int emptyBuckets = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
         if (emptyBuckets == 0) {
             if (slimeCount > 0) {
                 ScriptLogger.info(script.getScript(), "No empty buckets left, have " + slimeCount + " slime");
@@ -175,10 +166,6 @@ public class CollectSlimeTask {
     /**
      * Navigates to the basement where the Pool of Slime is located.
      * Attempts agility shortcut first if on tier 1 and player has level 58+ agility.
-     *
-     * Poll patterns:
-     * - pollFramesHuman for position change after shortcut [AUDIT: misclassified, should be pollFramesUntil]
-     * - pollFramesHuman for plane change (in slime dungeon) [AUDIT: misclassified, should be pollFramesUntil]
      */
     private int handleNavigateToBasement() {
         WorldPosition pos = script.getWorldPosition();
@@ -195,12 +182,25 @@ public class CollectSlimeTask {
         }
 
         // Try agility shortcut if we're on tier 1 and have required level
-        if (script.canUseAgilityShortcut() && isOnTier1(pos)) {
+        SlimeTier tier = getSlimeTier(pos);
+        ScriptLogger.debug(script.getScript(),
+            "Shortcut check: agilityLevel=" + script.getPlayerAgilityLevel() +
+            ", canUse=" + script.canUseAgilityShortcut() +
+            ", tier=" + tier + ", pos=" + pos);
+
+        if (script.canUseAgilityShortcut() && tier == SlimeTier.TIER_1) {
             RSObject shortcut = findAgilityShortcut();
+            ScriptLogger.debug(script.getScript(),
+                "Shortcut search result: " + (shortcut != null ? "FOUND" : "NOT FOUND"));
             if (shortcut != null) {
+                ScriptLogger.debug(script.getScript(),
+                    "Shortcut object: name=" + shortcut.getName() +
+                    ", pos=" + shortcut.getWorldPosition() +
+                    ", canReach=" + shortcut.canReach() +
+                    ", actions=" + java.util.Arrays.toString(shortcut.getActions()));
                 ScriptLogger.actionAttempt(script.getScript(),
                     "Using agility shortcut (level " + script.getPlayerAgilityLevel() + ")");
-                boolean interacted = shortcut.interact(EctofuntusConstants.ACTION_CLIMB);
+                boolean interacted = shortcut.interact(EctofuntusConstants.ACTION_JUMP_DOWN);
 
                 if (interacted) {
                     // Wait for movement/position change
@@ -233,23 +233,53 @@ public class CollectSlimeTask {
             return 0;
         }
 
-        boolean interacted;
         boolean isTrapdoor = stairs.getName() != null &&
             stairs.getName().equalsIgnoreCase(EctofuntusConstants.TRAPDOOR_NAME);
 
         if (isTrapdoor) {
-            ScriptLogger.actionAttempt(script.getScript(), "Using trapdoor to basement");
-            interacted = stairs.interact(createTrapdoorMenuHook());
+            // Trapdoor accepts "Open" (closed) or "Climb-down" (already open by another player)
+            ScriptLogger.actionAttempt(script.getScript(), "Interacting with trapdoor");
+            boolean interacted = stairs.interact("Open", EctofuntusConstants.ACTION_CLIMB_DOWN);
+            if (!interacted) {
+                if (handleRetryWithEscalation("Trapdoor interaction")) {
+                    script.stop();
+                }
+                return 0;
+            }
+
+            // If we only opened it (didn't descend), need a second interact to climb down
+            boolean descended = script.pollFramesUntil(() ->
+                EctofuntusConstants.isInSlimeDungeon(script.getWorldPosition()),
+                RandomUtils.gaussianRandom(800, 2000, 1200, 200)
+            );
+
+            if (!descended) {
+                // Trapdoor was opened — now climb down
+                script.pollFramesUntil(() -> false, RandomUtils.gaussianRandom(300, 800, 500, 100));
+                stairs = findNearestStaircase(EctofuntusConstants.ACTION_CLIMB_DOWN);
+                if (stairs == null) {
+                    ScriptLogger.debug(script.getScript(), "Trapdoor opened but climb-down not yet available");
+                    return 0;
+                }
+
+                ScriptLogger.actionAttempt(script.getScript(), "Climbing down trapdoor");
+                boolean climbedDown = stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
+                if (!climbedDown) {
+                    if (handleRetryWithEscalation("Trapdoor climb-down")) {
+                        script.stop();
+                    }
+                    return 0;
+                }
+            }
         } else {
             ScriptLogger.actionAttempt(script.getScript(), "Climbing down to basement");
-            interacted = stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
-        }
-
-        if (!interacted) {
-            if (handleRetryWithEscalation("Stair interaction")) {
-                script.stop();
+            boolean interacted = stairs.interact(EctofuntusConstants.ACTION_CLIMB_DOWN);
+            if (!interacted) {
+                if (handleRetryWithEscalation("Stair interaction")) {
+                    script.stop();
+                }
+                return 0;
             }
-            return 0;
         }
 
         // Wait for plane change
@@ -272,9 +302,6 @@ public class CollectSlimeTask {
 
     /**
      * Fills empty buckets at the Pool of Slime.
-     *
-     * Poll patterns:
-     * - pollFramesHuman for empty bucket count == 0 (slime fill) -- CORRECT, player watches fill
      */
     private int handleFillBuckets() {
         // Find the pool of slime
@@ -332,8 +359,8 @@ public class CollectSlimeTask {
             return 0;
         }
 
-        // Single tap with "Use" action on game screen (avoids UI elements)
-        boolean usedOnPool = script.getScript().getFinger().tapGameScreen(poolPolygon, "Use");
+        // Single tap on pool area (bucket is already selected with "Use")
+        boolean usedOnPool = script.getScript().getFinger().tap(poolPolygon);
 
         if (!usedOnPool) {
             if (handleRetryWithEscalation("Using bucket on pool")) {
@@ -369,8 +396,13 @@ public class CollectSlimeTask {
      * Verifies that we have the expected amount of slime.
      */
     private int handleVerifySlime() {
-        int slimeCount = getInventoryCount(EctofuntusConstants.BUCKET_OF_SLIME);
-        int emptyBuckets = getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
+        var inventorySnapshot = InventoryQueries.snapshot(
+            script,
+            Set.of(EctofuntusConstants.BUCKET_OF_SLIME, EctofuntusConstants.EMPTY_BUCKET),
+            "Error taking inventory snapshot: "
+        );
+        int slimeCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        int emptyBuckets = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
 
         ScriptLogger.info(script.getScript(), "Slime verification: " + slimeCount + " slime buckets, " +
             emptyBuckets + " empty buckets");
@@ -414,9 +446,6 @@ public class CollectSlimeTask {
 
     /**
      * Ensures the player is near the altar start position via ectophial teleport.
-     *
-     * Poll patterns:
-     * - pollFramesHuman for position change after teleport [AUDIT: debatable, should be pollFramesUntil]
      */
     private boolean ensureNearAltarStart() {
         WorldPosition startPos = script.getWorldPosition();
@@ -445,7 +474,7 @@ public class CollectSlimeTask {
         }
 
         // Wait for position change - teleport handler already handled visible animation
-        boolean posChanged = script.pollFramesUntil(() -> {
+        boolean posChanged = script.pollFramesHuman(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && !newPos.equals(startPos);
         }, RandomUtils.uniformRandom(500, 1000));
@@ -478,45 +507,6 @@ public class CollectSlimeTask {
                    obj.getName().equalsIgnoreCase(EctofuntusConstants.POOL_OF_SLIME_NAME) &&
                    obj.canReach()
         );
-    }
-
-    /**
-     * Selects the best trapdoor action based on menu entries.
-     * Prefers Climb-down when available, otherwise falls back to Open.
-     */
-    private MenuHook createTrapdoorMenuHook() {
-        return (List<MenuEntry> menuEntries) -> {
-            if (menuEntries == null || menuEntries.isEmpty()) {
-                return null;
-            }
-
-            MenuEntry openFallback = null;
-            for (MenuEntry entry : menuEntries) {
-                if (entry == null) {
-                    continue;
-                }
-
-                String action = entry.getAction();
-                String entity = entry.getEntityName();
-                if (action == null || entity == null) {
-                    continue;
-                }
-
-                if (!entity.equalsIgnoreCase(EctofuntusConstants.TRAPDOOR_NAME)) {
-                    continue;
-                }
-
-                if (action.equalsIgnoreCase(EctofuntusConstants.ACTION_CLIMB_DOWN)) {
-                    return entry;
-                }
-
-                if (action.equalsIgnoreCase("Open")) {
-                    openFallback = entry;
-                }
-            }
-
-            return openFallback;
-        };
     }
 
     /**
@@ -627,7 +617,7 @@ public class CollectSlimeTask {
             obj != null &&
             obj.getName() != null &&
             obj.getName().equalsIgnoreCase(EctofuntusConstants.WEATHERED_WALL_NAME) &&
-            hasAction(obj, EctofuntusConstants.ACTION_CLIMB) &&
+            hasAction(obj, EctofuntusConstants.ACTION_JUMP_DOWN) &&
             obj.canReach()
         );
     }
@@ -636,28 +626,40 @@ public class CollectSlimeTask {
         if (pos == null) {
             return SlimeTier.UNKNOWN;
         }
-        if (EctofuntusConstants.isInSlimeDungeon(pos)) {
-            int plane = pos.getPlane();
+
+        boolean inDungeon = EctofuntusConstants.isInSlimeDungeon(pos);
+        int plane = pos.getPlane();
+        int regionId = pos.getRegionID();
+
+        ScriptLogger.debug(script.getScript(),
+            "getSlimeTier: pos=" + pos + ", region=" + regionId +
+            ", plane=" + plane + ", inDungeon=" + inDungeon);
+
+        if (inDungeon) {
+            SlimeTier result;
             if (plane == 3) {
-                return SlimeTier.TIER_1;
+                result = SlimeTier.TIER_1;
+            } else if (plane == 2) {
+                result = SlimeTier.TIER_2;
+            } else if (plane == 1) {
+                result = SlimeTier.TIER_3;
+            } else if (plane == 0) {
+                result = SlimeTier.POOL;
+            } else {
+                result = SlimeTier.UNKNOWN;
             }
-            if (plane == 2) {
-                return SlimeTier.TIER_2;
-            }
-            if (plane == 1) {
-                return SlimeTier.TIER_3;
-            }
-            if (plane == 0) {
-                return SlimeTier.POOL;
-            }
+            ScriptLogger.debug(script.getScript(), "getSlimeTier: inDungeon plane=" + plane + " -> " + result);
+            return result;
         }
         if (isNearPool(pos) || EctofuntusConstants.SLIME_POOL_TO_TIER3_BOTTOM.contains(pos)) {
+            ScriptLogger.debug(script.getScript(), "getSlimeTier: matched POOL (nearPool or pool-to-tier3)");
             return SlimeTier.POOL;
         }
         if (EctofuntusConstants.SLIME_TIER3_TO_POOL_TOP.contains(pos)
             || EctofuntusConstants.SLIME_TIER3_TO_TIER2_BOTTOM.contains(pos)
             || EctofuntusConstants.SLIME_TIER3_TO_POOL_TOP.distanceTo(pos) <= 4.0
             || EctofuntusConstants.SLIME_TIER3_TO_TIER2_BOTTOM.distanceTo(pos) <= 4.0) {
+            ScriptLogger.debug(script.getScript(), "getSlimeTier: matched TIER_3 (area proximity)");
             return SlimeTier.TIER_3;
         }
         if (EctofuntusConstants.SLIME_TIER2_TO_TIER3_TOP.contains(pos)
@@ -666,6 +668,7 @@ public class CollectSlimeTask {
             || EctofuntusConstants.SLIME_TIER2_TO_TIER3_TOP.distanceTo(pos) <= 4.0
             || EctofuntusConstants.SLIME_TIER2_TO_TIER1_BOTTOM.distanceTo(pos) <= 4.0
             || EctofuntusConstants.SLIME_SHORTCUT_TIER2_BOTTOM.distanceTo(pos) <= 4.0) {
+            ScriptLogger.debug(script.getScript(), "getSlimeTier: matched TIER_2 (area proximity)");
             return SlimeTier.TIER_2;
         }
         if (EctofuntusConstants.SLIME_TIER1_TO_TIER2_TOP.contains(pos)
@@ -673,8 +676,10 @@ public class CollectSlimeTask {
             || EctofuntusConstants.SLIME_TIER1_TO_TIER2_TOP.distanceTo(pos) <= 4.0
             || EctofuntusConstants.SLIME_SHORTCUT_TIER1_TOP.distanceTo(pos) <= 4.0
             || pos.distanceTo(EctofuntusConstants.SLIME_LADDER_TILE) <= 4) {
+            ScriptLogger.debug(script.getScript(), "getSlimeTier: matched TIER_1 (area proximity)");
             return SlimeTier.TIER_1;
         }
+        ScriptLogger.debug(script.getScript(), "getSlimeTier: no match -> UNKNOWN");
         return SlimeTier.UNKNOWN;
     }
 
@@ -719,11 +724,16 @@ public class CollectSlimeTask {
         }
 
         if (tier == SlimeTier.TIER_1) {
+            ScriptLogger.debug(script.getScript(),
+                "navigateDown tier1: agilityLevel=" + script.getPlayerAgilityLevel() +
+                ", canUse=" + script.canUseAgilityShortcut() + ", pos=" + pos);
             if (script.canUseAgilityShortcut()) {
                 RSObject shortcut = findAgilityShortcut();
+                ScriptLogger.debug(script.getScript(),
+                    "navigateDown shortcut search: " + (shortcut != null ? "FOUND" : "NOT FOUND"));
                 if (shortcut != null) {
                     ScriptLogger.actionAttempt(script.getScript(), "Using agility shortcut (tier 1 -> tier 2)");
-                    if (shortcut.interact(EctofuntusConstants.ACTION_CLIMB)) {
+                    if (shortcut.interact(EctofuntusConstants.ACTION_JUMP_DOWN)) {
                         script.pollFramesHuman(() -> {
                             WorldPosition newPos = script.getWorldPosition();
                             return newPos != null && getSlimeTier(newPos) != SlimeTier.TIER_1;
@@ -795,36 +805,14 @@ public class CollectSlimeTask {
      * Gets the count of an item in inventory.
      */
     private int getInventoryCount(int itemId) {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-            ItemGroupResult search = wm.getInventory().search(Set.of(itemId));
-            return search != null ? search.getAmount(itemId) : 0;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "Error counting item " + itemId + ": " + e.getMessage());
-            return 0;
-        }
+        return InventoryQueries.countItem(script, itemId, "Error counting item " + itemId + ": ");
     }
 
     /**
      * Finds an item in inventory for interaction.
      */
     private ItemSearchResult findItem(int itemId) {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return null;
-            }
-            ItemGroupResult search = wm.getInventory().search(Set.of(itemId));
-            return search != null ? search.getItem(itemId) : null;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "Error finding item " + itemId + ": " + e.getMessage());
-            return null;
-        }
+        return InventoryQueries.findItem(script, itemId, "Error finding item " + itemId + ": ");
     }
 
     /**

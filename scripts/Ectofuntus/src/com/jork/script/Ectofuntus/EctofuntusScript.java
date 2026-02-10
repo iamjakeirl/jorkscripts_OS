@@ -9,11 +9,7 @@ import com.osmb.api.ui.WidgetManager;
 import java.util.function.BooleanSupplier;
 
 /**
- * Interface defining the contract for Ectofuntus script implementations.
- * Both the main Ectofuntus script and EctofuntusTest implement this interface,
- * allowing tasks to work with either implementation.
- *
- * @author jork
+ * Interface used by Ectofuntus tasks to access shared script behavior.
  */
 public interface EctofuntusScript {
 
@@ -68,20 +64,16 @@ public interface EctofuntusScript {
     void setHasBoneMeal(boolean hasBoneMeal);
 
     // ───────────────────────────────────────────────────────────────────────────
-    // Baseline Tracking (for container-based completion detection)
+    // Baseline Tracking
     // ───────────────────────────────────────────────────────────────────────────
 
     /**
-     * Gets the supply baseline (empty pot/bucket count after banking).
-     * Used by WorshipTask to detect completion when empties return to baseline.
-     * @return baseline count (always 8)
+     * Gets the supply baseline after banking.
      */
     int getSupplyBaseline();
 
     /**
      * Sets the supply baseline after banking.
-     * Called by BankTask after successful withdraw.
-     * @param baseline the empty pot/bucket count target
      */
     void setSupplyBaseline(int baseline);
 
@@ -155,20 +147,24 @@ public interface EctofuntusScript {
     void stop();
 
     /**
-     * Increments the bones processed counter by 1 (for metrics).
-     */
-    void incrementBonesProcessed();
-
-    /**
      * Increments the bones processed counter by a specified amount (for metrics).
      * @param count The number of bones to add to the counter
      */
     void incrementBonesProcessed(int count);
 
     /**
-     * Returns the underlying Script instance for utilities that require it.
-     * Used by JorkBank and other Script-dependent utilities.
-     * @return The Script instance
+     * Increments the ecto tokens gained counter (for metrics).
+     * @param count The number of tokens to add to the counter
+     */
+    void incrementEctoTokens(int count);
+
+    /**
+     * Resets task state machines to their initial states.
+     */
+    void resetCycleTaskStates();
+
+    /**
+     * Returns the underlying Script instance.
      */
     Script getScript();
 
@@ -187,4 +183,35 @@ public interface EctofuntusScript {
      * @return true if shortcut is available
      */
     boolean canUseAgilityShortcut();
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Ecto Token Collection
+    // ───────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Checks if tokens should be collected (set after worship completes).
+     */
+    boolean shouldCollectTokens();
+
+    /**
+     * Sets the token collection flag.
+     * @param shouldCollect true after worship, false after successful collection
+     */
+    void setShouldCollectTokens(boolean shouldCollect);
+
+    /**
+     * Gets the number of ecto tokens gained since the last collection.
+     */
+    int getTokensSinceLastCollection();
+
+    /**
+     * Gets the current token collection threshold.
+     */
+    int getTokenCollectionThreshold();
+
+    /**
+     * Marks tokens as collected - resets the "since last collection" counter
+     * and picks a new randomized threshold.
+     */
+    void markTokensCollected();
 }

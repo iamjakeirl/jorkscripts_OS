@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -91,17 +90,16 @@ public class MetricsTracker {
     }
     
     /**
-     * Registers XP tracking for a specific skill with sprite ID
+     * Registers XP tracking for a specific skill using OSMB's native XP tracker.
      * @param skill The skill type to track
-     * @param spriteId The sprite ID for the skill icon (e.g., 220 for Hunter)
      */
-    public void registerXPTracking(SkillType skill, int spriteId) {
+    public void registerXPTracking(SkillType skill) {
         if (xpProvider == null) {
             xpProvider = new XPMetricProvider();
         }
-        
+
         try {
-            xpProvider.initialize(script, skill, spriteId);
+            xpProvider.initialize(script, skill);
             
             // Register XP metrics - use NUMBER type to show total instead of rate
             register("XP Gained", 

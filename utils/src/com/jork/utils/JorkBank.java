@@ -8,12 +8,14 @@ import com.osmb.api.script.Script;
 import com.osmb.api.ui.bank.Bank;
 import com.osmb.api.ui.WidgetManager;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * A comprehensive banking utility that abstracts OSMB's Bank API into clean, reusable methods.
@@ -90,21 +92,20 @@ public class JorkBank {
     // Constants
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /** Common bank object names for detection */
-    private static final Set<String> BANK_OBJECT_NAMES = Set.of(
-        "Bank booth",
-        "Bank chest",
-        "Grand Exchange booth",
-        "Bank",
-        "Chest"  // Some areas use generic "Chest" for banking
+    /**
+     * Preferred action by bank object name.
+     * Falls back to generic bank action ordering when a preferred action is unavailable.
+     */
+    private static final Map<String, String> BANK_TO_ACTION_MAP = Map.of(
+        "Bank booth", "Bank",
+        "Bank chest", "Use",
+        "Grand Exchange booth", "Bank",
+        "Bank", "Bank",
+        "Chest", "Use"
     );
 
-    /** Bank interaction actions */
-    private static final Set<String> BANK_ACTIONS = Set.of(
-        "Bank",
-        "Use",
-        "Open"
-    );
+    /** Fallback bank action order when object-specific mapping is unavailable */
+    private static final List<String> FALLBACK_BANK_ACTIONS = List.of("Bank", "Use", "Open");
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Timeout Configuration (base values - actual timeouts are randomized ±15-25%)
@@ -391,30 +392,27 @@ public class JorkBank {
      * @return TransactionResult indicating success or failure
      */
     public TransactionResult depositAllExcept(Set<Integer> keepItemIds) {
+        Set<Integer> keepItems = keepItemIds != null ? keepItemIds : Set.of();
+
         Bank bank = getBankSafely();
         if (bank == null || !bank.isVisible()) {
             return TransactionResult.BANK_NOT_OPEN;
         }
 
-        ScriptLogger.debug(script, "Depositing all except " + keepItemIds.size() + " item types");
+        ScriptLogger.debug(script, "Depositing all except " + keepItems.size() + " item types");
 
-        boolean success = bank.depositAll(keepItemIds);
+        boolean success = bank.depositAll(keepItems);
         if (!success) {
             ScriptLogger.warning(script, "DepositAll operation returned false");
             return TransactionResult.OPERATION_FAILED;
         }
 
-        // Verify deposit - inventory should only contain kept items
+        // Verify deposit by checking every remaining inventory item ID is in the keep set.
         try {
-            boolean verified = script.pollFramesUntil(() -> {
-                int totalCount = getInventoryOccupiedSlots();
-                int keptCount = 0;
-                for (int itemId : keepItemIds) {
-                    keptCount += getInventoryCount(itemId);
-                }
-                // All remaining items should be from the keep list
-                return totalCount <= keptCount;
-            }, getTransactionTimeout());
+            boolean verified = script.pollFramesUntil(
+                () -> inventoryContainsOnly(keepItems),
+                getTransactionTimeout()
+            );
 
             return verified ? TransactionResult.SUCCESS : TransactionResult.VERIFICATION_TIMEOUT;
         } catch (Exception e) {
@@ -592,12 +590,13 @@ public class JorkBank {
                 return false;
             }
 
+            if (!obj.isInteractable()) {
+                return false;
+            }
+
             // Check if it's a known bank object
             String name = obj.getName();
-            boolean isBankObject = BANK_OBJECT_NAMES.stream()
-                .anyMatch(bankName -> name.equalsIgnoreCase(bankName));
-
-            if (!isBankObject) {
+            if (!isKnownBankObjectName(name)) {
                 return false;
             }
 
@@ -607,12 +606,7 @@ public class JorkBank {
                 return false;
             }
 
-            boolean hasAction = Arrays.stream(actions)
-                .filter(a -> a != null)
-                .anyMatch(a -> BANK_ACTIONS.stream()
-                    .anyMatch(bankAction -> a.equalsIgnoreCase(bankAction)));
-
-            return hasAction;
+            return hasAnyBankAction(actions);
         };
 
         // Apply custom filter if provided
@@ -627,11 +621,18 @@ public class JorkBank {
             return null;
         }
 
-        // Return closest one (sorted by distance)
-        return bankObjects.stream()
-            .filter(obj -> obj.canReach())  // Must be reachable
-            .min((a, b) -> Double.compare(a.distance(playerPos), b.distance(playerPos)))
-            .orElse(null);
+        // Pick uniformly from the top 3 closest reachable bank objects
+        List<RSObject> reachable = bankObjects.stream()
+            .filter(obj -> obj.canReach())
+            .sorted((a, b) -> Double.compare(a.distance(playerPos), b.distance(playerPos)))
+            .limit(3)
+            .collect(Collectors.toList());
+
+        if (reachable.isEmpty()) {
+            return null;
+        }
+
+        return reachable.get(ThreadLocalRandom.current().nextInt(reachable.size()));
     }
 
     /**
@@ -643,12 +644,17 @@ public class JorkBank {
             return null;
         }
 
-        // Prefer "Bank" action, then "Use", then "Open"
-        for (String preferred : new String[]{"Bank", "Use", "Open"}) {
-            for (String action : actions) {
-                if (action != null && action.equalsIgnoreCase(preferred)) {
-                    return action;
-                }
+        String preferredAction = getPreferredActionForObjectName(bankObject.getName());
+        String mappedMatch = findActionIgnoreCase(actions, preferredAction);
+        if (mappedMatch != null) {
+            return mappedMatch;
+        }
+
+        // Fallback: prefer generic actions in descending order
+        for (String fallbackAction : FALLBACK_BANK_ACTIONS) {
+            String match = findActionIgnoreCase(actions, fallbackAction);
+            if (match != null) {
+                return match;
             }
         }
 
@@ -710,6 +716,39 @@ public class JorkBank {
     }
 
     /**
+     * Checks whether all currently visible inventory items are allowed by a keep set.
+     */
+    private boolean inventoryContainsOnly(Set<Integer> allowedItemIds) {
+        try {
+            WidgetManager wm = script.getWidgetManager();
+            if (wm == null || wm.getInventory() == null) {
+                return false;
+            }
+
+            ItemGroupResult snapshot = wm.getInventory().search(Collections.emptySet());
+            if (snapshot == null) {
+                return false;
+            }
+
+            List<ItemSearchResult> items = snapshot.getRecognisedItems();
+            if (items == null || items.isEmpty()) {
+                return true;
+            }
+
+            for (ItemSearchResult item : items) {
+                if (item != null && !allowedItemIds.contains(item.getId())) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (Exception e) {
+            ScriptLogger.debug(script, "Error validating inventory keep set: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Checks if an amount requires the X (custom) quantity button.
      * Standard amounts (1, 5, 10) have dedicated buttons and don't trigger X dialogue.
      *
@@ -751,23 +790,50 @@ public class JorkBank {
         }
     }
 
-    /**
-     * Gets the number of occupied slots in the inventory.
-     */
-    private int getInventoryOccupiedSlots() {
-        try {
-            WidgetManager wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-
-            // Search with empty set to scan all slots
-            ItemGroupResult search = wm.getInventory().search(Set.of());
-            return search != null ? search.getOccupiedSlotCount() : 0;
-        } catch (Exception e) {
-            ScriptLogger.debug(script, "Error getting inventory slot count: " + e.getMessage());
-            return 0;
+    private boolean isKnownBankObjectName(String objectName) {
+        if (objectName == null) {
+            return false;
         }
+
+        return BANK_TO_ACTION_MAP.keySet().stream()
+            .anyMatch(bankName -> bankName.equalsIgnoreCase(objectName));
+    }
+
+    private String getPreferredActionForObjectName(String objectName) {
+        if (objectName == null) {
+            return null;
+        }
+
+        for (Map.Entry<String, String> entry : BANK_TO_ACTION_MAP.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(objectName)) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
+    }
+
+    private boolean hasAnyBankAction(String[] actions) {
+        for (String fallbackAction : FALLBACK_BANK_ACTIONS) {
+            if (findActionIgnoreCase(actions, fallbackAction) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String findActionIgnoreCase(String[] actions, String preferredAction) {
+        if (actions == null || preferredAction == null) {
+            return null;
+        }
+
+        for (String action : actions) {
+            if (action != null && action.equalsIgnoreCase(preferredAction)) {
+                return action;
+            }
+        }
+
+        return null;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

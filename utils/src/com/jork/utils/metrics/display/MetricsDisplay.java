@@ -134,7 +134,8 @@ public class MetricsDisplay {
                     config.getLogoImagePath(),
                     maxLogoWidth,
                     newHeight,
-                    config.getLogoScaleMode()
+                    config.getLogoScaleMode(),
+                    true
                 );
                 
                 if (logoImage == null) {
@@ -375,7 +376,8 @@ public class MetricsDisplay {
                     config.getLogoImagePath(),
                     -1, // Calculate width from aspect ratio
                     config.getLogoHeight(),
-                    config.getLogoScaleMode()
+                    config.getLogoScaleMode(),
+                    true
                 );
                 if (logoImage != null) {
                     System.out.println("[MetricsDisplay] Logo loaded successfully: " + logoImage.getWidth() + "x" + logoImage.getHeight());

@@ -3,6 +3,7 @@ package com.jork.script.Ectofuntus;
 import com.jork.script.Ectofuntus.config.EctoConfig;
 import com.jork.script.Ectofuntus.tasks.BankTask;
 import com.jork.script.Ectofuntus.tasks.CollectSlimeTask;
+import com.jork.script.Ectofuntus.tasks.CollectTokensTask;
 import com.jork.script.Ectofuntus.tasks.GrindBonesTask;
 import com.jork.script.Ectofuntus.tasks.WorshipTask;
 import com.jork.script.Ectofuntus.ui.ScriptOptions;
@@ -24,31 +25,22 @@ import com.osmb.api.script.ScriptDefinition;
 import com.osmb.api.script.SkillCategory;
 import com.osmb.api.ui.component.tabs.skill.SkillType;
 import com.osmb.api.ui.GameState;
+import com.osmb.api.ui.tabs.Settings;
 import com.osmb.api.utils.RandomUtils;
+import com.osmb.api.utils.UIResult;
 import com.osmb.api.visual.drawing.Canvas;
 
 import javafx.scene.Scene;
 
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Ectofuntus Script - Automates prayer training at the Ectofuntus in Port Phasmatys.
- *
- * Features:
- * - Banking and teleporting with ectophial
- * - Slime collection in basement
- * - Bone grinding on top floor
- * - Worship at the altar
- * - XP failsafe and break handling
- *
- * @author jork
- * @version 1.0
  */
 @ScriptDefinition(
-    name = "Ectofuntus",
+    name = "jorkTofuntus",
     author = "jork",
     version = 1.0,
     threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
@@ -61,6 +53,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     // ───────────────────────────────────────────────────────────────────────────
     private volatile boolean settingsConfirmed = false;  // FX thread → script thread
     private boolean initialised = false;                  // Script thread internal
+    private boolean zoomSet = false;                      // One-time zoom setup
 
     private volatile EctoConfig config;  // Configuration from UI
 
@@ -69,6 +62,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     // ───────────────────────────────────────────────────────────────────────────
     private BankTask bankTask;
     private CollectSlimeTask collectSlimeTask;
+    private CollectTokensTask collectTokensTask;
     private GrindBonesTask grindBonesTask;
     private WorshipTask worshipTask;
 
@@ -92,9 +86,8 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     }
 
     private ActiveSubtask activeSubtask = ActiveSubtask.NONE;
-    private boolean isDrainingForBreak = false;
 
-    /** Supply baseline (empty pot/bucket count after banking). Default 8, updated by BankTask. */
+    /** Supply baseline (empty pot/bucket count after banking), based on bank location. */
     private volatile int supplyBaseline = 8;
 
     /** Cached player agility level (detected on startup) */
@@ -109,6 +102,17 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     // Metrics Tracking
     // ───────────────────────────────────────────────────────────────────────────
     private final AtomicInteger bonesProcessed = new AtomicInteger(0);
+    private final AtomicInteger ectoTokensGained = new AtomicInteger(0);
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Ecto Token Collection
+    // ───────────────────────────────────────────────────────────────────────────
+    /** Flag set after worship completes, cleared after successful token collection */
+    private boolean shouldCollectTokens = false;
+    /** Tokens gained snapshot at last collection */
+    private int ectoTokensAtLastCollection = 0;
+    /** Randomized threshold for actual collection */
+    private int tokenCollectionThreshold = RandomUtils.uniformRandom(50, 100);
 
     public Ectofuntus(Object scriptCore) {
         super(scriptCore);
@@ -130,7 +134,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
             scene.getWindow().setOnHidden(e -> {
                 if (!settingsConfirmed) {
                     // User closed window without confirming - use defaults
-                    onSettingsConfirmed(EctoConfig.getDefault(), null);
+                    onSettingsConfirmed(EctoConfig.getDefault());
                 }
             });
         }
@@ -140,7 +144,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
      * Called from the JavaFX thread when settings are confirmed.
      * This method MUST be lightweight and avoid game API interactions.
      */
-    public void onSettingsConfirmed(EctoConfig config, Map<String, Object> options) {
+    public void onSettingsConfirmed(EctoConfig config) {
         this.config = config;
 
         // Apply debug logging preference immediately
@@ -161,6 +165,10 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         } else {
             ScriptLogger.info(this, "Rune pouch mode DISABLED");
         }
+
+        // Apply user's token collection range (initial value is hardcoded before config exists)
+        this.tokenCollectionThreshold = RandomUtils.uniformRandom(
+            config.getTokenCollectMin(), config.getTokenCollectMax());
 
         this.settingsConfirmed = true;
     }
@@ -190,6 +198,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         // Create task instances
         bankTask = new BankTask(this);
         collectSlimeTask = new CollectSlimeTask(this);
+        collectTokensTask = new CollectTokensTask(this);
         grindBonesTask = new GrindBonesTask(this);
         worshipTask = new WorshipTask(this);
 
@@ -202,24 +211,70 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
 
     /**
      * Sets the supply baseline based on current config.
-     * Ectofuntus always uses 8 supplies per cycle.
+     * Walk-to-Port-Phasmatys uses 9; all other routes use 8.
      */
     private void updateSupplyBaselineFromConfig() {
         if (config == null) {
             return;
         }
 
-        int baseline = 8;
+        int baseline = config.getBankLocation() != null
+            ? config.getBankLocation().getSupplyBaseline()
+            : 8;
         supplyBaseline = baseline;
         ScriptLogger.debug(this, "Supply baseline set to " + baseline + " (config)");
     }
 
     /**
+     * Sets the zoom level to a random value in the desired range.
+     * Called once at script start with highest priority.
+     */
+    private void setZoom() {
+        ScriptLogger.info(this, "Checking zoom level...");
+        if (getWidgetManager() == null) {
+            ScriptLogger.debug(this, "WidgetManager not ready; delaying zoom check");
+            return;
+        }
+        Settings settings = getWidgetManager().getSettings();
+
+        final int MIN_ZOOM = 24;
+        final int MAX_ZOOM = 31;
+
+        // Check if zoom is already in acceptable range
+        if (settings != null) {
+            UIResult<Integer> currentZoomResult = settings.getZoomLevel();
+            if (currentZoomResult.isFound()) {
+                int currentZoom = currentZoomResult.get();
+                ScriptLogger.info(this, "Current zoom level: " + currentZoom + "%");
+                if (currentZoom >= MIN_ZOOM && currentZoom <= MAX_ZOOM) {
+                    ScriptLogger.info(this, "Zoom already in acceptable range: " + currentZoom + "%");
+                    zoomSet = true;
+                    return;
+                }
+            }
+        }
+
+        int targetZoom = RandomUtils.uniformRandom(MIN_ZOOM, MAX_ZOOM);
+        ScriptLogger.info(this, "Setting zoom to: " + targetZoom + "%");
+
+        // Attempt to set zoom with a single backoff retry
+        if (settings != null && settings.setZoomLevel(targetZoom)) {
+            ScriptLogger.info(this, "Zoom set successfully to: " + targetZoom + "%");
+            zoomSet = true;
+            return;
+        }
+
+        // Backoff and retry once
+        pollFramesUntil(() -> false, RandomUtils.weightedRandom(250, 400));
+        Settings retrySettings = getWidgetManager() != null ? getWidgetManager().getSettings() : null;
+        if (retrySettings != null && retrySettings.setZoomLevel(targetZoom)) {
+            ScriptLogger.info(this, "Zoom set successfully (retry) to: " + targetZoom + "%");
+            zoomSet = true;
+        }
+    }
+
+    /**
      * Opens the inventory tab if it is not already open.
-     *
-     * Poll patterns:
-     * - pollFramesHuman for inventory open -- CORRECT, opening inventory is a visible UI action
-     *   (player clicks and sees inventory tab appear)
      */
     private void openInventoryIfNeeded() {
         if (getWidgetManager() == null || getWidgetManager().getInventory() == null) {
@@ -244,6 +299,12 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
 
     @Override
     public int poll() {
+        // ─── Highest Priority: Set zoom level (only once) ───────────
+        if (!zoomSet) {
+            setZoom();
+            return 0;
+        }
+
         // ─── Wait for Settings Confirmation ──────────────────────────
         if (!settingsConfirmed) {
             pollFramesUntil(() -> settingsConfirmed, RandomUtils.gaussianRandom(250, 900, 500, 140));
@@ -266,13 +327,13 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
             return 0;
         }
 
-        return runProductionMode();
+        return runMainLoop();
     }
 
     /**
      * Production mode - full Ectofuntus pipeline.
      */
-    private int runProductionMode() {
+    private int runMainLoop() {
         // ─── XP Failsafe Check ───────────────────────────────────────
         if (config != null && config.isXpFailsafeEnabled()) {
             long timeSinceXP = getTimeSinceLastXPGain();
@@ -297,15 +358,12 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
             }
         }
 
-        // ─── Break Handling ──────────────────────────────────────────
-        if (getProfileManager().isDueToBreak()) {
-            if (!isDrainingForBreak) {
-                ScriptLogger.info(this, "Break due - entering drain mode");
-                isDrainingForBreak = true;
-            }
+        // ─── Task Execution (Priority Order) ─────────────────────────
+        // Priority 0: Collect ecto tokens (before banking, while still near altar)
+        if (collectTokensTask.canExecute()) {
+            return collectTokensTask.execute();
         }
 
-        // ─── Task Execution (Priority Order) ─────────────────────────
         // Priority 1: Banking
         if (bankTask.canExecute()) {
             activeSubtask = ActiveSubtask.NONE;
@@ -352,49 +410,32 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         }
 
         // Default poll rate
-        pollFramesUntil(() -> false, RandomUtils.gaussianRandom(250, 800, 450, 120));
+        pollFramesUntil(() -> false, RandomUtils.gaussianRandom(50, 300, 150, 100));
         return 0;
     }
 
     @Override
     public boolean promptBankTabDialogue() {
-        // Enable OSMB's bank tab dialogue - user selects tab, OSMB handles switching
+        // Allow bank tab selection when the game prompts for it.
         return true;
     }
 
     @Override
     public boolean canBreak() {
         // Only allow break when we're in a safe state (at bank without resources)
-        boolean canBreakNow = shouldBank && !hasSlime && !hasBoneMeal;
-
-        if (canBreakNow && isDrainingForBreak) {
-            ScriptLogger.info(this, "Drain complete - allowing break");
-            isDrainingForBreak = false;
-        }
-
-        return canBreakNow;
+        return shouldBank && !hasSlime && !hasBoneMeal;
     }
 
     @Override
-    public void onGameStateChanged(GameState newGameState) {
-        super.onGameStateChanged(newGameState);  // CRITICAL: call parent
-
+    protected void onMetricsGameStateChanged(GameState newGameState) {
         if (newGameState != null && newGameState != GameState.LOGGED_IN) {
             // Logged out - clear tracked state (game objects lost)
             ScriptLogger.warning(this, "Logout detected - clearing state");
             clearTrackedState();
-
-            if (config != null && config.isXpFailsafePauseDuringLogout() && config.isXpFailsafeEnabled()) {
-                pauseXPFailsafeTimer();
-            }
         } else if (newGameState == GameState.LOGGED_IN) {
             // Logged back in - detect state and recover
             ScriptLogger.info(this, "Logged in - detecting state and recovering");
             detectAndRecoverState();
-
-            if (config != null && config.isXpFailsafePauseDuringLogout() && config.isXpFailsafeEnabled()) {
-                resumeXPFailsafeTimer();
-            }
         }
     }
 
@@ -412,9 +453,7 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     private void clearTrackedState() {
         // Reset state detection flag to allow re-detection after relog
         stateDetectionCompleted = false;
-
-        // Reset drain flag on logout
-        isDrainingForBreak = false;
+        resetCycleTaskStates();
 
         // No cached game object references in this script currently
         // (tasks handle their own object lookups each poll)
@@ -476,9 +515,6 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
                     ScriptLogger.warning(this, "Unknown inventory state - defaulting to bank");
                     break;
             }
-
-            // Reset drain flag on login
-            isDrainingForBreak = false;
 
         } catch (Exception e) {
             ExceptionUtils.rethrowIfTaskInterrupted(e);
@@ -608,12 +644,16 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         // Activity label
         registerMetric("Activity", () -> getCurrentActivity(), MetricType.TEXT);
 
-        // Enable Prayer XP tracking (sprite ID for Prayer skill)
-        enableXPTracking(SkillType.PRAYER, 210);  // 210 = Prayer sprite
+        // Enable Prayer XP tracking
+        enableXPTracking(SkillType.PRAYER);
 
         // Bones processed
         registerMetric("Bones Used", bonesProcessed::get, MetricType.NUMBER);
         registerMetric("Bones /h", bonesProcessed::get, MetricType.RATE);
+
+        // Ecto tokens gained (5 per bonemeal worshipped)
+        registerMetric("Ecto Tokens", ectoTokensGained::get, MetricType.NUMBER);
+        registerMetric("Tokens /h", ectoTokensGained::get, MetricType.RATE);
 
         // Time since XP (if failsafe enabled)
         if (config != null && config.isXpFailsafeEnabled()) {
@@ -634,6 +674,8 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         panelConfig.setCustomPosition(10, 110);
         panelConfig.setMinWidth(180);
         panelConfig.setBackgroundColor(new java.awt.Color(0, 0, 0, 220));
+        panelConfig.setLogoImage("jorktofuntus_logo.png", 50);
+        panelConfig.setLogoOpacity(1.0);
         return panelConfig;
     }
 
@@ -644,11 +686,12 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
 
     private String getCurrentActivity() {
         if (!initialised) return "Initializing";
+        if (collectTokensTask != null && collectTokensTask.canExecute()) return "Collecting Tokens";
         if (shouldBank) return "Banking";
-        if (!hasSlime && !hasBoneMeal) return "Teleporting";
-        if (!hasSlime) return "Collecting Slime";
-        if (!hasBoneMeal) return "Grinding Bones";
-        return "Worshipping";
+        if (activeSubtask == ActiveSubtask.SLIME) return "Collecting Slime";
+        if (activeSubtask == ActiveSubtask.BONES) return "Grinding Bones";
+        if (hasSlime && hasBoneMeal) return "Worshipping";
+        return "Teleporting";
     }
 
     // ───────────────────────────────────────────────────────────────────────────
@@ -683,18 +726,33 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
         this.hasBoneMeal = hasBoneMeal;
     }
 
-    public boolean isDrainingForBreak() {
-        return isDrainingForBreak;
-    }
-
-    @Override
-    public void incrementBonesProcessed() {
-        bonesProcessed.incrementAndGet();
-    }
-
     @Override
     public void incrementBonesProcessed(int count) {
         bonesProcessed.addAndGet(count);
+    }
+
+    @Override
+    public void incrementEctoTokens(int count) {
+        ectoTokensGained.addAndGet(count);
+    }
+
+    @Override
+    public void resetCycleTaskStates() {
+        ScriptLogger.debug(this, "Resetting task state machines (slime, bones, worship)");
+        activeSubtask = ActiveSubtask.NONE;
+
+        if (collectSlimeTask != null) {
+            collectSlimeTask.reset();
+        }
+        if (grindBonesTask != null) {
+            grindBonesTask.reset();
+        }
+        if (worshipTask != null) {
+            worshipTask.reset();
+        }
+        if (collectTokensTask != null) {
+            collectTokensTask.reset();
+        }
     }
 
     @Override
@@ -767,5 +825,39 @@ public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScrip
     @Override
     public void setSupplyBaseline(int baseline) {
         this.supplyBaseline = baseline;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Ecto Token Collection
+    // ───────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public boolean shouldCollectTokens() {
+        return shouldCollectTokens;
+    }
+
+    @Override
+    public void setShouldCollectTokens(boolean shouldCollect) {
+        this.shouldCollectTokens = shouldCollect;
+    }
+
+    @Override
+    public int getTokensSinceLastCollection() {
+        return ectoTokensGained.get() - ectoTokensAtLastCollection;
+    }
+
+    @Override
+    public int getTokenCollectionThreshold() {
+        return tokenCollectionThreshold;
+    }
+
+    @Override
+    public void markTokensCollected() {
+        ectoTokensAtLastCollection = ectoTokensGained.get();
+        int min = (config != null) ? config.getTokenCollectMin() : 50;
+        int max = (config != null) ? config.getTokenCollectMax() : 100;
+        tokenCollectionThreshold = RandomUtils.uniformRandom(min, max);
+        ScriptLogger.info(this, "Tokens collected. Next collection at +" +
+            tokenCollectionThreshold + " tokens");
     }
 }

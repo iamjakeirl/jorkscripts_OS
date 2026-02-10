@@ -73,28 +73,28 @@ public class JorkHunter extends AbstractMetricsScript {
     // and just clear existing ones before a break.
     private boolean isDrainingForBreak = false;
     private boolean zoomSet = false;
-    
+
     // --- Expedite Collection Settings ----------------------------------------
     private boolean expediteCollectionEnabled = false;  // Whether expedite collection is enabled
     private int expediteCollectionChance = 50;  // Chance (0-100) to expedite collection
     private boolean hasTriggeredExpedite = false;  // Whether we've already triggered expedite for this drain
-    
+
     // --- XP-Based Failsafe Settings ------------------------------------------
     private volatile boolean xpFailsafeEnabled = false;  // Whether XP failsafe is enabled
     private volatile int xpFailsafeTimeoutMinutes = 10;  // Minutes without XP before stopping
     private volatile boolean xpFailsafePauseDuringLogout = true;  // Whether to pause during logout
     private long lastFailsafeWarningTime = 0;  // Track when we last warned about failsafe
-    
+
     // --- Trap Prioritization Settings ----------------------------------------
     private volatile boolean distanceBasedPrioritization = true;  // Permanently enabled for efficiency
-    
+
     // --- Custom Anchor State Management --------------------------------------
     private volatile boolean requiresCustomAnchor = false;
     private volatile boolean customAnchorSelected = false;
     private WorldPosition customAnchorPosition = null;
     private boolean anchorSelectionInProgress = false;
     private List<WorldPosition> customTrapPositions = null;  // For Custom strategy multi-tile selection
-    
+
     // --- Metrics Tracking -----------------------------------------------------
     private final AtomicInteger successfulCatches = new AtomicInteger(0);
     private final AtomicInteger failedCatches = new AtomicInteger(0);
@@ -109,7 +109,7 @@ public class JorkHunter extends AbstractMetricsScript {
     protected void onMetricsStart() {
         // Load configuration for this variant
         huntingConfig = HuntingConfig.load(this);
-        
+
         // Log script startup with variant name
         ScriptLogger.startup(this, "1.0", "jork", huntingConfig.getVariantName());
 
@@ -120,26 +120,21 @@ public class JorkHunter extends AbstractMetricsScript {
 
         ScriptLogger.info(this, "Settings window opened – waiting for user confirmation…");
 
-        // If the user closes the window via the X button treat it as confirmation
+        // Treat closing the window as confirmation with defaults.
         if (scene.getWindow() != null) {
             scene.getWindow().setOnHidden(e -> {
                 Map<String, Object> defaultOptions = new HashMap<>();
-                // Strategy defaults
                 defaultOptions.put("maxCenterDistance", 0);
                 defaultOptions.put("recenterOnEmpty", false);
                 defaultOptions.put("requiresCustomAnchor", true);
-                // Logging/expedite defaults to mirror UI
                 defaultOptions.put("debugLogging", false);
                 defaultOptions.put("expediteCollection", false);
                 defaultOptions.put("expediteChance", 50);
-                // Failsafe defaults to mirror UI (enabled, 5 minutes)
                 defaultOptions.put("xpFailsafeEnabled", true);
                 defaultOptions.put("xpFailsafeTimeout", 5);
-                onSettingsSelected(this.selectedTarget, null, this.selectedStrategy, false, -1, defaultOptions);
+                onSettingsSelected(this.selectedTarget, this.selectedStrategy, false, -1, defaultOptions);
             });
         }
-
-        // No further game interaction here – wait for UI confirmation
     }
 
     /**
@@ -148,16 +143,14 @@ public class JorkHunter extends AbstractMetricsScript {
      * interacting with the game API. It only stores the selections and sets a
      * volatile flag that the script thread will act upon in its next poll.
      */
-    public void onSettingsSelected(String target, String area, String strategy, boolean manual, int lvl, Map<String, Object> options) {
+    public void onSettingsSelected(String target, String strategy, boolean manual, int lvl, Map<String, Object> options) {
         this.selectedTarget = target;
         this.selectedStrategy = strategy;
         this.strategyOptions = options;
-        
-        // Always use TilePicker now
+
         this.requiresCustomAnchor = true;
         ScriptLogger.info(this, "TilePicker mode enabled - tile selection will occur after initialization");
-        
-        // Extract expedite collection settings if present
+
         if (options != null) {
             this.expediteCollectionEnabled = Boolean.TRUE.equals(options.get("expediteCollection"));
             Object chanceObj = options.get("expediteChance");
@@ -169,23 +162,15 @@ public class JorkHunter extends AbstractMetricsScript {
             if (dbgObj instanceof Boolean) {
                 com.jork.utils.ScriptLogger.setDebugEnabled((Boolean) dbgObj);
             }
-            // Distance-based prioritization is now permanently enabled
-            // Keeping parsing code commented for potential future use:
-            // Object distPriorObj = options.get("distanceBasedPrioritization");
-            // if (distPriorObj instanceof Boolean) {
-            //     this.distanceBasedPrioritization = (Boolean) distPriorObj;
-            // }
-            this.distanceBasedPrioritization = true; // Always enabled
+            this.distanceBasedPrioritization = true;
         }
-        
+
         if (expediteCollectionEnabled) {
             ScriptLogger.info(this, "Expedite collection enabled with " + expediteCollectionChance + "% chance");
         }
-        
-        // Always log that distance-based prioritization is enabled
+
         ScriptLogger.info(this, "Distance-based trap prioritization ENABLED");
-        
-        // Extract XP failsafe settings if present
+
         if (options != null) {
             Object failsafeObj = options.get("xpFailsafeEnabled");
             ScriptLogger.debug(this, "XP Failsafe enabled value from UI: " + failsafeObj);
@@ -193,7 +178,7 @@ public class JorkHunter extends AbstractMetricsScript {
                 this.xpFailsafeEnabled = (Boolean) failsafeObj;
             }
             Object timeoutObj = options.get("xpFailsafeTimeout");
-            ScriptLogger.debug(this, "XP Failsafe timeout value from UI: " + timeoutObj + " (type: " + 
+            ScriptLogger.debug(this, "XP Failsafe timeout value from UI: " + timeoutObj + " (type: " +
                              (timeoutObj != null ? timeoutObj.getClass().getSimpleName() : "null") + ")");
             if (timeoutObj instanceof Integer) {
                 this.xpFailsafeTimeoutMinutes = (Integer) timeoutObj;
@@ -203,9 +188,9 @@ public class JorkHunter extends AbstractMetricsScript {
                 this.xpFailsafePauseDuringLogout = (Boolean) pauseDuringLogoutObj;
             }
         }
-        
+
         if (xpFailsafeEnabled) {
-            ScriptLogger.info(this, "XP Failsafe ENABLED - will stop after " + 
+            ScriptLogger.info(this, "XP Failsafe ENABLED - will stop after " +
                              xpFailsafeTimeoutMinutes + " minutes without XP gains" +
                              (xpFailsafePauseDuringLogout ? " (pauses during logout)" : ""));
         } else {
@@ -228,8 +213,6 @@ public class JorkHunter extends AbstractMetricsScript {
 
         ScriptLogger.info(this, "Settings confirmed – Target: " + selectedTarget + " | Strategy: " + selectedStrategy);
 
-        // No need to set expected region ID - will be determined after TilePicker
-
         // Ensure the inventory is open before beginning tasks
         openInventoryIfNeeded();
 
@@ -244,7 +227,7 @@ public class JorkHunter extends AbstractMetricsScript {
 
         // Show hotkeys panel (naming reflects actual behavior)
         showHotkeysPanel();
-        
+
         // Initialize metrics
         initializeMetrics();
 
@@ -293,7 +276,7 @@ public class JorkHunter extends AbstractMetricsScript {
         }
 
         // Backoff and retry once if settings is null or first attempt failed
-        try { Thread.sleep(RandomUtils.weightedRandom(250, 400)); } catch (InterruptedException ignored) {}
+        pollFramesUntil(() -> false, RandomUtils.weightedRandom(250, 400));
         Settings retrySettings = getWidgetManager() != null ? getWidgetManager().getSettings() : null;
         if (retrySettings != null && retrySettings.setZoomLevel(targetZoom)) {
             log("Zoom set successfully (retry) to: " + targetZoom + "%");
@@ -306,7 +289,7 @@ public class JorkHunter extends AbstractMetricsScript {
         if (getWidgetManager().getInventory().isOpen()) {
             return;
         }
-        
+
         pollFramesHuman(() -> {
             if (!getWidgetManager().getInventory().isOpen()) {
                 return getWidgetManager().getInventory().open();
@@ -321,26 +304,26 @@ public class JorkHunter extends AbstractMetricsScript {
      */
     private void showHotkeysPanel() {
         ScriptLogger.debug(this, "Checking hotkey panel visibility...");
-        
+
         try {
             // Get the PopoutPanelContainer - when EXPANDED, it shows the button to open hotkeys
             PopoutPanelContainer popoutPanelContainer = (PopoutPanelContainer) getWidgetManager().getComponent(PopoutPanelContainer.class);
-            
+
             if (popoutPanelContainer != null) {
                 Rectangle bounds = popoutPanelContainer.getBounds();
                 if (bounds != null) {
                     ComponentContainerStatus containerStatus = popoutPanelContainer.getResult().getComponentImage().getGameFrameStatusType();
                     ScriptLogger.debug(this, "PopoutPanelContainer status: " + containerStatus);
-                    
+
                     if (containerStatus == ComponentContainerStatus.EXPANDED) {
                         // When EXPANDED, we can see the button to toggle hotkeys
                         // Tap it to collapse the container and reveal the hotkeys
                         ScriptLogger.info(this, "PopoutPanel expanded - tapping to reveal hotkeys");
-                        
+
                         Rectangle bottomButton = new Rectangle(bounds.x + 5, bounds.y + bounds.height - 38, bounds.width - 10, 35);
                         if (getFinger().tap(bottomButton)) {
                             ScriptLogger.debug(this, "Tapped hotkey button, waiting for collapse...");
-                            
+
                             // Wait until the popout panel has collapsed (which reveals the hotkeys)
                             pollFramesUntil(() -> {
                                 Rectangle boundsPresent = popoutPanelContainer.getBounds();
@@ -349,9 +332,9 @@ public class JorkHunter extends AbstractMetricsScript {
                                 }
                                 return popoutPanelContainer.getResult().getComponentImage().getGameFrameStatusType() == ComponentContainerStatus.COLLAPSED;
                             }, RandomUtils.uniformRandom(1000, 2000));
-                            
+
                             ScriptLogger.info(this, "Hotkey panel revealed");
-                            
+
                             // Give a short delay for UI to update
                             Thread.sleep(RandomUtils.weightedRandom(500, 800));
                         } else {
@@ -374,50 +357,50 @@ public class JorkHunter extends AbstractMetricsScript {
 
     private void calculateMaxTraps() {
         ScriptLogger.debug(this, "Starting Hunter level calculation...");
-        
+
         // Null checks first
         if (getWidgetManager() == null) {
             ScriptLogger.error(this, "WidgetManager is null!");
             return;
         }
-        
+
         // Use concrete type from the start
         Skill skillTab = getWidgetManager().getSkillTab();
         if (skillTab == null) {
             ScriptLogger.error(this, "SkillTab is null!");
             return;
         }
-        
+
         ScriptLogger.debug(this, "SkillTab obtained, attempting to get Hunter level...");
-        
-        // Try with retries
+
+        // Retry level reads if needed.
         int maxRetries = 2;
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             if (attempt > 0) {
                 ScriptLogger.debug(this, "Retrying Hunter level read (attempt " + (attempt + 1) + "/" + maxRetries + ")");
             }
-            
+
             // Get skill level
             SkillLevel hunterInfo = skillTab.getSkillLevel(SkillType.HUNTER);
             if (hunterInfo == null) {
                 ScriptLogger.warning(this, "HunterInfo is null - skills tab may not be accessible");
-                continue; // Try again
+                continue;
             }
-            
+
             int level = hunterInfo.getLevel();
             ScriptLogger.debug(this, "Raw Hunter level from API: " + level);
-            
+
             // Calculate max traps using helper method
             maxTraps = calculateTrapsForLevel(level);
             ScriptLogger.info(this, "Hunter Level: " + level + " | Calculated Max Traps: " + maxTraps);
             return; // Success
         }
-        
+
         // All retries failed
         ScriptLogger.warning(this, "Could not read Hunter level after " + maxRetries + " attempts, defaulting to 1 trap");
         maxTraps = 1;
     }
-    
+
     /**
      * Helper method to calculate max traps based on Hunter level.
      * Formula: 1 trap at level 1-19, 2 at 20-39, 3 at 40-59, 4 at 60-79, 5 at 80+
@@ -447,10 +430,10 @@ public class JorkHunter extends AbstractMetricsScript {
     public void initializeTasks() {
         // Determine trap type based on selected target and configuration
         TrapType trapType = determineTrapType();
-        
+
         // Create placement strategy based on user selection
         TrapPlacementStrategy strategy = createStrategyFromSelection(selectedStrategy);
-        
+
         // Determine hunting zones based on strategy
         List<RectangleArea> huntingZones;
         if ("Custom".equals(selectedStrategy) && strategy instanceof CustomTilePickerStrategy) {
@@ -459,7 +442,7 @@ public class JorkHunter extends AbstractMetricsScript {
             RectangleArea boundingArea = customStrategy.getBoundingArea();
             if (boundingArea != null) {
                 huntingZones = Collections.singletonList(boundingArea);
-                ScriptLogger.info(this, "Using custom bounding area from " + 
+                ScriptLogger.info(this, "Using custom bounding area from " +
                                 customStrategy.getSelectedPositions().size() + " selected positions");
             } else {
                 ScriptLogger.warning(this, "Custom strategy has no bounding area, using default");
@@ -478,7 +461,7 @@ public class JorkHunter extends AbstractMetricsScript {
             huntingZones = Collections.singletonList(customZone);
             ScriptLogger.info(this, "Using custom 5x5 hunting zone centered at " + customAnchorPosition);
         } else {
-            // Fallback: create default zone around player position
+            // Create a default zone around the player position.
             WorldPosition playerPos = getWorldPosition();
             if (playerPos != null) {
                 ScriptLogger.warning(this, "Custom anchor not selected properly - creating default 5x5 zone around current position");
@@ -497,10 +480,10 @@ public class JorkHunter extends AbstractMetricsScript {
                 huntingZones = Collections.emptyList();
             }
         }
-        
+
         // Create and store reference to HuntTask
         huntTask = new TrapTask(this, trapType, maxTraps, huntingZones, strategy);
-        
+
         // Add common tasks
         taskManager.addTasks(
             new DropTask(this, trapType.getDropItems(), null), // No predefined location
@@ -514,12 +497,12 @@ public class JorkHunter extends AbstractMetricsScript {
     public int[] regionsToPrioritise() {
         // Return all possible region IDs based on creature type
         String targetLower = selectedTarget != null ? selectedTarget.toLowerCase() : "";
-        
+
         // Check if it's a bird type
-        if (targetLower.contains("swift") || targetLower.contains("longtail") || 
+        if (targetLower.contains("swift") || targetLower.contains("longtail") ||
             targetLower.contains("wagtail") || targetLower.contains("twitch")) {
             return HunterLocationConstants.BIRD_REGIONS;
-        } 
+        }
         // Check if it's a chinchompa type
         else if (targetLower.contains("chinchompa")) {
             return HunterLocationConstants.CHINCHOMPA_REGIONS;
@@ -534,42 +517,41 @@ public class JorkHunter extends AbstractMetricsScript {
             setZoom();
             return 0; // Immediate retry
         }
-        
+
         // --- XP Failsafe Check ------------------------------------------------
         if (xpFailsafeEnabled && initialised) {
             long timeSinceXP = getTimeSinceLastXPGain();
             long timeoutMillis = xpFailsafeTimeoutMinutes * 60 * 1000L;
-            
-            // Only trigger failsafe if we've been running for at least the timeout period
-            // This prevents false triggers at script start
+
+            // Trigger only after the timeout window has elapsed.
             if (timeSinceXP > timeoutMillis) {
-                ScriptLogger.error(this, "XP FAILSAFE TRIGGERED: No XP gained for " + 
+                ScriptLogger.error(this, "XP FAILSAFE TRIGGERED: No XP gained for " +
                     xpFailsafeTimeoutMinutes + " minutes. Stopping script.");
                 ScriptLogger.error(this, "Last XP gain was: " + getTimeSinceLastXPGainFormatted() + " ago");
                 stop();
                 return 1000;
             }
-            
+
             // Log warning when approaching timeout (every 30 seconds in the last minute)
             long warningThreshold = timeoutMillis - (60 * 1000); // 1 minute before timeout
             if (timeSinceXP > warningThreshold && timeSinceXP < timeoutMillis) {
                 long currentTime = System.currentTimeMillis();
                 if (currentTime - lastFailsafeWarningTime > 30000) { // Warn every 30 seconds
-                    ScriptLogger.warning(this, "XP Failsafe warning: " + 
+                    ScriptLogger.warning(this, "XP Failsafe warning: " +
                         ((timeoutMillis - timeSinceXP) / 1000) + " seconds until auto-stop");
                     lastFailsafeWarningTime = currentTime;
                 }
             }
         }
-        
+
         // --- Pre-Task-Execution Checks (runs every poll) ---------------------
-        
+
         // Proactively check if a break is due, and if so, start draining traps.
         if (getProfileManager().isDueToBreak()) {
             if (!this.isDrainingForBreak) {
                 ScriptLogger.info(this, "Break is due. Entering drain mode to clear active traps.");
                 this.isDrainingForBreak = true;
-                
+
                 // Check if we should trigger expedited collection
                 if (expediteCollectionEnabled && !hasTriggeredExpedite && huntTask != null) {
                     int roll = RandomUtils.uniformRandom(1, 100);
@@ -602,7 +584,7 @@ public class JorkHunter extends AbstractMetricsScript {
         if (requiresCustomAnchor && !customAnchorSelected && !anchorSelectionInProgress) {
             return handleCustomAnchorSelection();
         }
-        
+
         // Wait for anchor if needed
         if (requiresCustomAnchor && !customAnchorSelected) {
             return 500; // Wait for anchor selection
@@ -625,24 +607,24 @@ public class JorkHunter extends AbstractMetricsScript {
             ScriptLogger.warning(this, "World position not yet established, waiting...");
             return 1000;
         }
-        
+
         anchorSelectionInProgress = true;
-        
+
         try {
             // Check if Custom strategy is selected - use multi-tile selection
             if ("Custom".equals(selectedStrategy)) {
                 ScriptLogger.info(this, "Opening tile picker for custom multi-tile selection...");
-                
+
                 // Call enhanced tile picker for multiple selection
                 List<WorldPosition> selectedPositions = EnhancedTilePickerPanel.showMultiple(this);
-                
+
                 if (selectedPositions != null && !selectedPositions.isEmpty()) {
                     customTrapPositions = selectedPositions;
                     customAnchorPosition = selectedPositions.get(0); // Use first as anchor for compatibility
                     customAnchorSelected = true;
                     ScriptLogger.info(this, "Custom positions selected: " + selectedPositions.size() + " tiles");
                     ScriptLogger.debug(this, "First position (anchor): " + customAnchorPosition);
-                    
+
                     // Reinitialize tasks with the custom positions
                     reinitializeTasksWithCustomAnchor();
                 } else {
@@ -653,14 +635,14 @@ public class JorkHunter extends AbstractMetricsScript {
             } else {
                 // Standard single-tile selection for other strategies
                 ScriptLogger.info(this, "Opening tile picker for custom anchor selection...");
-                
+
                 WorldPosition selected = EnhancedTilePickerPanel.show(this);
-                
+
                 if (selected != null) {
                     customAnchorPosition = selected;
                     customAnchorSelected = true;
                     ScriptLogger.info(this, "Custom anchor selected at: " + selected);
-                    
+
                     // Reinitialize tasks with the custom anchor
                     reinitializeTasksWithCustomAnchor();
                 } else {
@@ -677,19 +659,19 @@ public class JorkHunter extends AbstractMetricsScript {
         } finally {
             anchorSelectionInProgress = false;
         }
-        
+
         return 200;
     }
-    
+
     /**
      * Reinitializes tasks after custom anchor selection.
      */
     private void reinitializeTasksWithCustomAnchor() {
         ScriptLogger.info(this, "Reinitializing tasks with custom anchor at: " + customAnchorPosition);
-        
+
         // Clear existing tasks
         taskManager.clearTasks();
-        
+
         // Recreate tasks with the new anchor
         initializeTasks();
     }
@@ -705,28 +687,28 @@ public class JorkHunter extends AbstractMetricsScript {
         if (trapManager == null) {
             return true;
         }
-        
+
         boolean hasTraps = !trapManager.isEmpty();
         boolean hasPendingTransitions = trapManager.hasPendingGracePeriods();
-        
+
         // Prevent break if we have traps OR if traps are in transition (grace period)
         boolean canBreakNow = !hasTraps && !hasPendingTransitions;
-        
+
         // Only log state transitions
         if (canBreakNow && isDrainingForBreak) {
             ScriptLogger.info(this, "All traps cleared and no pending transitions - allowing break");
             isDrainingForBreak = false; // Reset flag after successful break
             hasTriggeredExpedite = false; // Reset expedite flag for next break
         } else if (!hasTraps && hasPendingTransitions) {
-            ScriptLogger.debug(this, "No visible traps but " + trapManager.getPendingGracePeriodsCount() + 
+            ScriptLogger.debug(this, "No visible traps but " + trapManager.getPendingGracePeriodsCount() +
                              " trap(s) in state transition - preventing break");
         }
-        
+
         return canBreakNow;
     }
 
     // --- Getter methods for tasks to access script state ---
-    
+
     /**
      * Gets the TrapStateManager from the HuntTask for break/hop logic.
      * @return TrapStateManager instance, or null if tasks not initialized
@@ -738,7 +720,7 @@ public class JorkHunter extends AbstractMetricsScript {
     public boolean isDrainingForBreak() {
         return isDrainingForBreak;
     }
-    
+
     public boolean isDistanceBasedPrioritization() {
         return distanceBasedPrioritization;
     }
@@ -758,14 +740,11 @@ public class JorkHunter extends AbstractMetricsScript {
 
             // Draw tracked trap positions in neon orange
             drawTrackedTrapPositions(canvas, trapManager);
-            
+
             // Draw custom anchor position if set
             if (customAnchorPosition != null) {
                 drawCustomAnchor(canvas);
             }
-            
-            // Draw respawn circles with z-offset visualization
-            // drawRespawnCirclesWithZOffset(canvas);  // Commented out - debugging tool
 
         } catch (Exception e) {
             ExceptionUtils.rethrowIfTaskInterrupted(e);
@@ -781,41 +760,41 @@ public class JorkHunter extends AbstractMetricsScript {
         if (customAnchorPosition == null) {
             return;
         }
-        
+
         // Get the tile polygon for the custom anchor position
         Polygon tilePoly = getSceneProjector().getTilePoly(customAnchorPosition);
-        
+
         if (tilePoly != null) {
             // Fill with semi-transparent green
             canvas.fillPolygon(tilePoly, 0x00FF00, 0.3); // Green with 30% opacity
-            
+
             // Draw bright green outline
             canvas.drawPolygon(tilePoly, 0x00FF00, 1.0); // Bright green outline
-            
+
             // Draw a center marker
             Rectangle bounds = tilePoly.getBounds();
             if (bounds != null) {
                 int centerX = bounds.x + bounds.width / 2;
                 int centerY = bounds.y + bounds.height / 2;
-                
+
                 // Draw crosshair at center
                 canvas.drawLine(centerX - 5, centerY, centerX + 5, centerY, 0x00FF00, 2);
                 canvas.drawLine(centerX, centerY - 5, centerX, centerY + 5, 0x00FF00, 2);
-                
+
                 // Draw text label
-                canvas.drawText("ANCHOR", centerX - 25, centerY - 10, 0x00FF00, 
+                canvas.drawText("ANCHOR", centerX - 25, centerY - 10, 0x00FF00,
                     new java.awt.Font("Arial", java.awt.Font.BOLD, 12));
             }
         }
     }
-    
+
     /**
      * Draw neon orange highlights for all tracked trap positions
      */
     private void drawTrackedTrapPositions(Canvas canvas, TrapStateManager trapManager) {
         // Get all tracked trap positions from the TrapStateManager
         List<WorldPosition> trapPositions = trapManager.getLaidTrapPositions();
-        
+
         if (trapPositions == null || trapPositions.isEmpty()) {
             return;
         }
@@ -826,72 +805,16 @@ public class JorkHunter extends AbstractMetricsScript {
 
             // Get the tile polygon for this world position using the scene projector
             Polygon tilePoly = getSceneProjector().getTilePoly(position);
-            
+
             if (tilePoly != null) {
                 // Fill the polygon with neon orange (semi-transparent)
                 canvas.fillPolygon(tilePoly, 0xFF6600, 0.4); // Neon orange with 40% opacity
-                
+
                 // Draw the polygon outline with bright neon orange for better visibility
                 canvas.drawPolygon(tilePoly, 0xFF3300, 1.0); // Bright orange-red outline
             }
         }
     }
-
-
-    /**
-     * DEBUG METHOD: Draws black squares at detected trap positions with z-offset values
-     * Purpose: Visualizes where the system thinks traps are located based on respawn circle detection
-     * and shows the z-offset being used for screen-to-world coordinate conversion.
-     * Uncomment the call in onPaint() to enable this debugging visualization.
-     */
-    /*
-    private void drawRespawnCirclesWithZOffset(Canvas canvas) {
-        // Get all respawn circles detected by the pixel analyzer
-        List<PixelAnalyzer.RespawnCircle> respawnCircles = getPixelAnalyzer().findRespawnCircleTypes();
-        
-        if (respawnCircles == null || respawnCircles.isEmpty()) {
-            return;
-        }
-
-        for (PixelAnalyzer.RespawnCircle circle : respawnCircles) {
-            Rectangle circleBounds = circle.getBounds();
-            PixelAnalyzer.RespawnCircle.Type circleType = circle.getType();
-            
-            // Get the appropriate z-offset for this circle type
-            int zOffset = getTrapStateManager().getZOffsetForCircleType(circleType);
-            
-            // Convert respawn circle to world positions using the utils method
-            List<WorldPosition> positions = getUtils().getWorldPositionForRespawnCircles(
-                List.of(circleBounds), zOffset);
-            
-            
-            // For each detected world position, draw a 3x3 black square at the tile center + z-offset indicator
-            for (WorldPosition position : positions) {
-                if (position == null) continue;
-                
-                // Convert to local position to get coordinates for getTilePoint
-                LocalPosition localPos = position.toLocalPosition(this);
-                if (localPos == null) continue;
-                
-                // Get the tile center point with the same z-offset as the respawn circle
-                java.awt.Point tileCenter = getSceneProjector().getTilePoint(
-                    localPos.getPreciseX(), localPos.getPreciseY(), localPos.getPlane(), null, zOffset);
-                if (tileCenter == null) continue;
-                
-                // Draw a 3x3 black square at the tile center with the correct z-offset
-                canvas.fillRect(tileCenter.x - 1, tileCenter.y - 1, 3, 3, 0x000000); // Black square
-                
-                // Draw the z-offset text near the square
-                String zOffsetText = String.valueOf(zOffset);
-                canvas.drawText(zOffsetText, tileCenter.x + 5, tileCenter.y - 5, 0xFFFFFF, 
-                    new java.awt.Font("Arial", java.awt.Font.BOLD, 12));
-            }
-        }
-    }
-    */
-
-
-    
     /**
      * Creates a TrapPlacementStrategy instance based on the selected strategy name.
      * @param strategyName The name of the strategy selected by the user
@@ -902,16 +825,15 @@ public class JorkHunter extends AbstractMetricsScript {
             ScriptLogger.warning(this, "No strategy or anchor selected. Using default.");
             return new NoCardinalStrategy();
         }
-        
+
         return switch (strategyName) {
             case "Auto" -> {
                 ScriptLogger.info(this, "Creating Auto pattern strategy for " + maxTraps + " traps");
-                yield new AutoPatternStrategy(this, huntTask, customAnchorPosition, maxTraps);
+                yield new AutoPatternStrategy(this, customAnchorPosition, maxTraps);
             }
             case "X-Pattern" -> {
                 ScriptLogger.info(this, "Creating X-Pattern strategy with customAnchor=" + customAnchorPosition);
-                // Always use custom anchor, no dynamic recentering
-                yield new XPatternStrategy(this, huntTask, 0, false, customAnchorPosition);
+                yield new XPatternStrategy(this, 0, false, customAnchorPosition);
             }
             case "L-Pattern" -> {
                 ScriptLogger.info(this, "Creating L-Pattern strategy with customAnchor=" + customAnchorPosition);
@@ -926,11 +848,11 @@ public class JorkHunter extends AbstractMetricsScript {
                         orientation = (String) orientationObj;
                     }
                 }
-                
-                LinePatternStrategy.Orientation lineOrientation = 
-                    "Vertical".equals(orientation) ? LinePatternStrategy.Orientation.VERTICAL : 
+
+                LinePatternStrategy.Orientation lineOrientation =
+                    "Vertical".equals(orientation) ? LinePatternStrategy.Orientation.VERTICAL :
                                                     LinePatternStrategy.Orientation.HORIZONTAL;
-                
+
                 ScriptLogger.info(this, "Creating Line pattern strategy with orientation=" + orientation);
                 yield new LinePatternStrategy(this, customAnchorPosition, maxTraps, lineOrientation);
             }
@@ -949,11 +871,11 @@ public class JorkHunter extends AbstractMetricsScript {
             case "No Cardinal" -> new NoCardinalStrategy();
             default -> {
                 ScriptLogger.warning(this, "Unknown strategy: " + strategyName + ". Using Auto as fallback.");
-                yield new AutoPatternStrategy(this, huntTask, customAnchorPosition, maxTraps);
+                yield new AutoPatternStrategy(this, customAnchorPosition, maxTraps);
             }
         };
     }
-    
+
     /**
      * Determines the trap type based on the selected target and available types in config.
      * @return The trap type to use for hunting
@@ -971,7 +893,7 @@ public class JorkHunter extends AbstractMetricsScript {
             case "embertailed jerboa", "ferret" -> TrapType.CHINCHOMPA;
             default -> TrapType.BIRD_SNARE; // Default fallback
         };
-        
+
         // Check if the requested type is enabled in the configuration
         if (!huntingConfig.isTypeEnabled(requestedType)) {
             ScriptLogger.warning(this, "Requested trap type " + requestedType + " is not enabled in this variant.");
@@ -981,10 +903,10 @@ public class JorkHunter extends AbstractMetricsScript {
                 return type;
             }
         }
-        
+
         return requestedType;
     }
-    
+
     /**
      * Gets the hunting configuration for this script variant.
      * @return The hunting configuration
@@ -992,17 +914,17 @@ public class JorkHunter extends AbstractMetricsScript {
     public HuntingConfig getHuntingConfig() {
         return huntingConfig;
     }
-    
+
     /**
      * Initializes the metrics tracking system
      */
     private void initializeMetrics() {
         // Register hunting target as first metric (displays at top)
         registerMetric("Hunting", () -> selectedTarget, MetricType.TEXT);
-        
-        // Enable Hunter XP tracking with sprite ID 220
-        enableXPTracking(SkillType.HUNTER, 220);
-        
+
+        // Enable Hunter XP tracking
+        enableXPTracking(SkillType.HUNTER);
+
         // Register custom metrics
         registerMetric("Total Catches", successfulCatches::get, MetricType.NUMBER);
         registerMetric("Total Misses", failedCatches::get, MetricType.NUMBER);
@@ -1010,24 +932,24 @@ public class JorkHunter extends AbstractMetricsScript {
         registerMetric("Missed /h", failedCatches::get, MetricType.RATE);
         registerMetric("Success Rate", this::calculateSuccessRate, MetricType.PERCENTAGE);
         registerMetric("Total Checked", totalChecks::get, MetricType.NUMBER);
-        
+
         // Add failsafe metric if enabled
         if (xpFailsafeEnabled) {
-            registerMetric("Since XP", 
+            registerMetric("Since XP",
                           () -> {
                               long ms = getTimeSinceLastXPGain();
                               if (ms < 60000) return (ms/1000) + "s";
                               else return (ms/60000) + "m " + ((ms%60000)/1000) + "s";
-                          }, 
+                          },
                           MetricType.TEXT);
-            
+
             // Configure pause during logout if enabled
             if (xpFailsafePauseDuringLogout) {
                 configureXPFailsafeTimerPause(true);
             }
         }
     }
-    
+
     /**
      * Calculates the success rate percentage
      */
@@ -1036,7 +958,7 @@ public class JorkHunter extends AbstractMetricsScript {
         if (total == 0) return 0.0;
         return (successfulCatches.get() * 100.0) / total;
     }
-    
+
     /**
      * Called when a trap successfully catches something
      */
@@ -1045,7 +967,7 @@ public class JorkHunter extends AbstractMetricsScript {
         totalChecks.incrementAndGet();
         // XP tracking is now handled automatically by OCR-based XPMetricProvider
     }
-    
+
     /**
      * Called when a trap fails to catch
      */
@@ -1053,32 +975,29 @@ public class JorkHunter extends AbstractMetricsScript {
         failedCatches.incrementAndGet();
         totalChecks.incrementAndGet();
     }
-    
+
     /**
      * Called when the game state changes (login/logout/world hop).
      * Clears trap tracking when we're no longer in game since traps are lost on logout.
      */
     @Override
-    public void onGameStateChanged(GameState newGameState) {
-        // IMPORTANT: Call parent implementation to ensure proper framework registration
-        super.onGameStateChanged(newGameState);
-        
+    protected void onMetricsGameStateChanged(GameState newGameState) {
         // Check if we've transitioned away from being logged in
         if (newGameState != null && newGameState != GameState.LOGGED_IN) {
             // We've logged out or are on login screen - all traps are lost
             if (huntTask != null) {
                 TrapStateManager trapManager = huntTask.getTrapStateManager();
                 if (trapManager != null && !trapManager.isEmpty()) {
-                    ScriptLogger.warning(this, "Detected logout/world hop (GameState: " + newGameState + 
+                    ScriptLogger.warning(this, "Detected logout/world hop (GameState: " + newGameState +
                                        ") - clearing " + trapManager.getTotalCount() + " tracked traps");
                     trapManager.clearAllTraps();
-                    
+
                     // Reset any laying/resetting flags to prevent stuck states
                     trapManager.clearLayingFlag();
                     trapManager.clearResetFlag();
                 }
             }
-            
+
             // Reset mid-action execution state on all tasks
             resetAllTaskExecutionState();
 
@@ -1088,24 +1007,12 @@ public class JorkHunter extends AbstractMetricsScript {
                 hasTriggeredExpedite = false;
                 ScriptLogger.info(this, "Reset drain mode flags due to logout");
             }
-
-            // Pause XP failsafe timer when not logged in
-            if (xpFailsafePauseDuringLogout && xpFailsafeEnabled) {
-                pauseXPFailsafeTimer();
-                ScriptLogger.debug(this, "Paused XP failsafe timer - GameState: " + newGameState);
-            }
         } else if (newGameState == GameState.LOGGED_IN) {
             // We've logged back in
             ScriptLogger.info(this, "Logged back in - trap tracking cleared, will rescan for traps");
-            
-            // Resume XP failsafe timer when logged back in
-            if (xpFailsafePauseDuringLogout && xpFailsafeEnabled) {
-                resumeXPFailsafeTimer();
-                ScriptLogger.debug(this, "Resumed XP failsafe timer - GameState: LOGGED_IN");
-            }
         }
     }
-    
+
     /**
      * Called when the script relogs after a disconnect or world hop.
      * This ensures trap tracking is cleared since all traps are lost on logout.
@@ -1113,7 +1020,7 @@ public class JorkHunter extends AbstractMetricsScript {
     @Override
     public void onRelog() {
         ScriptLogger.info(this, "=== RELOG DETECTED - Clearing trap tracking ===");
-        
+
         // Clear all trap tracking since traps are lost on logout/world hop
         if (huntTask != null) {
             TrapStateManager trapManager = huntTask.getTrapStateManager();
@@ -1123,20 +1030,20 @@ public class JorkHunter extends AbstractMetricsScript {
                     ScriptLogger.warning(this, "Clearing " + trapCount + " tracked traps after relog");
                 }
                 trapManager.clearAllTraps();
-                
+
                 // Also clear laying/resetting flags
                 trapManager.clearLayingFlag();
                 trapManager.clearResetFlag();
             }
         }
-        
+
         // Reset drain mode if it was active
         if (isDrainingForBreak) {
             isDrainingForBreak = false;
             hasTriggeredExpedite = false;
             ScriptLogger.info(this, "Reset drain mode flags after relog");
         }
-        
+
         ScriptLogger.info(this, "Trap tracking cleared - will rescan for new traps");
 
         // Reset mid-action execution state on all tasks (committed positions, movement flags, etc.)
@@ -1163,18 +1070,18 @@ public class JorkHunter extends AbstractMetricsScript {
         MetricsPanelConfig config = MetricsPanelConfig.darkTheme();
         config.setCustomPosition(10, 110);
         config.setMinWidth(180);
-        
+
         // Set pure black background
         config.setBackgroundColor(new java.awt.Color(0, 0, 0, 220)); // Black with slight transparency
-        
+
         // Add logo image - try as resource name that will be in JAR
         config.setLogoImage("jorkhunter_logo.png", 30);  // Reduced size to fit within panel
         config.setLogoOpacity(1.0);
-        
+
         // Disable text overlay since we're using pure black
         config.setUseTextOverlay(false);
-        
+
         return config;
     }
 
-} 
+}

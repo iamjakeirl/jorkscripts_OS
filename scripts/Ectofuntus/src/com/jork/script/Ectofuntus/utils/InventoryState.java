@@ -1,60 +1,46 @@
 package com.jork.script.Ectofuntus.utils;
 
 /**
- * Enum representing the player's current inventory state in the Ectofuntus activity.
- * Used for context-aware state detection and recovery decisions.
- *
- * Key insight: bone count + bone dust count together represent "bones processed".
- * This allows smart recovery from partial states after logout/relog or manual intervention.
- *
- * @author jork
+ * Inventory states used by recovery and task selection.
  */
 public enum InventoryState {
     /**
-     * Has bonemeal AND bucket of slime (can worship now).
-     * Ready to complete full worship cycle at Ectofuntus altar.
+     * Has enough materials to worship.
      */
     READY_TO_WORSHIP,
 
     /**
-     * Has some bonemeal AND some slime (partial progress).
-     * Can complete partial worship cycle, then may need to bank.
+     * Has partial worship materials.
      */
     PARTIAL_WORSHIP_READY,
 
     /**
-     * Has bones but no dust yet (need to grind).
-     * Should navigate to bone grinder to process bones.
+     * Has bones and containers ready for processing.
      */
     NEED_PROCESSING,
 
     /**
-     * Has dust but no slime (need to collect slime).
-     * Should navigate to Pool of Slime in basement.
+     * Has bonemeal but still needs slime.
      */
     NEED_SLIME_ONLY,
 
     /**
-     * Has slime but no dust (need to grind bones).
-     * Should navigate to bone grinder to process bones.
+     * Has slime but still needs bonemeal.
      */
     NEED_DUST_ONLY,
 
     /**
-     * Missing critical supplies (need to bank).
-     * Has some materials but missing essential items (empty pots/buckets).
+     * Missing required supplies and needs banking.
      */
     NEED_RESTOCK,
 
     /**
-     * Inventory depleted (need full restock).
-     * No worship-ready materials in inventory.
+     * Inventory is depleted and needs full restock.
      */
     EMPTY_NEED_BANK,
 
     /**
-     * Cannot determine state.
-     * May indicate missing configuration or unexpected inventory state.
+     * Could not classify current inventory.
      */
     UNKNOWN
 }

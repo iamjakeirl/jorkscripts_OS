@@ -42,12 +42,32 @@ public class MetricsImageLoader {
      * @return Resized BufferedImage, or null if loading fails
      */
     public static BufferedImage loadAndResize(String path, int targetWidth, int targetHeight, ScaleMode mode) {
+        return loadAndResize(path, targetWidth, targetHeight, mode, false);
+    }
+
+    /**
+     * Loads and resizes an image from the specified path, with optional transparent-edge trimming.
+     *
+     * @param path Path to the image file
+     * @param targetWidth Target width (use -1 to calculate from aspect ratio)
+     * @param targetHeight Target height (use -1 to calculate from aspect ratio)
+     * @param mode Scaling mode to use
+     * @param trimTransparentPadding Whether to trim fully transparent padding before resizing
+     * @return Resized BufferedImage, or null if loading fails
+     */
+    public static BufferedImage loadAndResize(
+        String path,
+        int targetWidth,
+        int targetHeight,
+        ScaleMode mode,
+        boolean trimTransparentPadding
+    ) {
         if (path == null || path.isEmpty()) {
             return null;
         }
         
         // Generate cache key
-        String cacheKey = path + "_" + targetWidth + "x" + targetHeight + "_" + mode;
+        String cacheKey = path + "_" + targetWidth + "x" + targetHeight + "_" + mode + "_trim=" + trimTransparentPadding;
         
         // Check cache first
         if (imageCache.containsKey(cacheKey)) {
@@ -59,6 +79,10 @@ public class MetricsImageLoader {
             BufferedImage original = loadImage(path);
             if (original == null) {
                 return null;
+            }
+
+            if (trimTransparentPadding) {
+                original = trimTransparentBorders(original);
             }
             
             // Calculate dimensions if needed
@@ -83,6 +107,60 @@ public class MetricsImageLoader {
             ScriptLogger.warning(null, "Failed to load/resize image: " + path + " - " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Trims fully transparent border pixels around an image.
+     * If no opaque pixels are found, returns the original image unchanged.
+     */
+    private static BufferedImage trimTransparentBorders(BufferedImage original) {
+        int width = original.getWidth();
+        int height = original.getHeight();
+
+        int minX = width;
+        int minY = height;
+        int maxX = -1;
+        int maxY = -1;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int alpha = (original.getRGB(x, y) >>> 24) & 0xFF;
+                if (alpha > 0) {
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x > maxX) maxX = x;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+
+        // Entire image is transparent (or no trimming needed) - keep original.
+        if (maxX < minX || maxY < minY) {
+            return original;
+        }
+        if (minX == 0 && minY == 0 && maxX == width - 1 && maxY == height - 1) {
+            return original;
+        }
+
+        int trimmedWidth = maxX - minX + 1;
+        int trimmedHeight = maxY - minY + 1;
+        BufferedImage trimmed = new BufferedImage(trimmedWidth, trimmedHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = trimmed.createGraphics();
+        g2d.drawImage(
+            original,
+            0,
+            0,
+            trimmedWidth,
+            trimmedHeight,
+            minX,
+            minY,
+            maxX + 1,
+            maxY + 1,
+            null
+        );
+        g2d.dispose();
+
+        return trimmed;
     }
     
     /**

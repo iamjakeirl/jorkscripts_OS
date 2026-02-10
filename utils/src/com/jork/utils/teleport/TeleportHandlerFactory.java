@@ -3,6 +3,7 @@ package com.jork.utils.teleport;
 import com.jork.utils.teleport.handlers.CamelotTeleportHandler;
 import com.jork.utils.teleport.handlers.EctophialHandler;
 import com.jork.utils.teleport.handlers.FaladorTeleportHandler;
+import com.jork.utils.teleport.handlers.GrandExchangeTeleportHandler;
 import com.jork.utils.teleport.handlers.RingOfDuelingHandler;
 import com.jork.utils.teleport.handlers.VarrockTeleportHandler;
 import com.jork.utils.teleport.handlers.WalkingHandler;
@@ -129,6 +130,9 @@ public class TeleportHandlerFactory {
         }
 
         // Spell teleports (original)
+        if (lowerName.contains("grand exchange")) {
+            return createGrandExchangeTeleportHandler(script);
+        }
         if (lowerName.contains("varrock")) {
             return createVarrockTeleportHandler(script);
         }
@@ -220,6 +224,16 @@ public class TeleportHandlerFactory {
      */
     public static TeleportHandler createVarrockTeleportHandler(Script script) {
         return new VarrockTeleportHandler(script);
+    }
+
+    /**
+     * Creates a handler for Grand Exchange teleport variant of Varrock Teleport.
+     *
+     * @param script The script instance
+     * @return GrandExchangeTeleportHandler instance
+     */
+    public static TeleportHandler createGrandExchangeTeleportHandler(Script script) {
+        return new GrandExchangeTeleportHandler(script);
     }
 
     /**

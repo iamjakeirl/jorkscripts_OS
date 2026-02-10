@@ -2,7 +2,7 @@ package com.jork.script.Ectofuntus.tasks;
 
 import com.jork.script.Ectofuntus.EctofuntusConstants;
 import com.jork.script.Ectofuntus.EctofuntusScript;
-import com.jork.utils.ExceptionUtils;
+import com.jork.script.Ectofuntus.utils.InventoryQueries;
 import com.jork.utils.JorkTaps;
 import com.jork.utils.ScriptLogger;
 import com.jork.utils.teleport.TeleportHandlerFactory;
@@ -17,16 +17,6 @@ import java.util.Set;
 
 /**
  * Handles worship at the Ectofuntus altar to gain Prayer XP.
- *
- * State machine flow:
- * CHECK_LOCATION → NAVIGATE_TO_ALTAR → WORSHIP → VERIFY_COMPLETE → SET_BANK_FLAG
- *
- * Key mechanic: Worshipping at the altar consumes one bucket of slime and one pot of bonemeal
- * per worship action. We repeat until both are empty.
- *
- * Priority: 5 (Lowest - only after both slime and bonemeal are ready)
- *
- * @author jork
  */
 public class WorshipTask {
 
@@ -144,9 +134,15 @@ public class WorshipTask {
 
         ScriptLogger.debug(script.getScript(), "Worship: Current region = " + pos.getRegionID());
 
-        // Verify we have supplies
-        int bonemealCount = getBonemealCount();
-        int slimeCount = getSlimeCount();
+        Set<Integer> itemIds = new HashSet<>(EctofuntusConstants.BONEMEAL_IDS);
+        itemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
+        ItemGroupResult inventorySnapshot = InventoryQueries.snapshot(
+            script,
+            itemIds,
+            "Error taking inventory snapshot: "
+        );
+        int bonemealCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slimeCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
 
         if (bonemealCount == 0 || slimeCount == 0) {
             ScriptLogger.warning(script.getScript(), "Missing supplies - bonemeal: " + bonemealCount +
@@ -210,17 +206,14 @@ public class WorshipTask {
 
     /**
      * Worships at the Ectofuntus altar using JorkTaps spam tap pattern.
-     * Uses position-based tapping with human variant delays (150-400ms) until all supplies are consumed.
-     *
-     * Poll patterns: JorkTaps.spamTapArea(human=true) -- CORRECT, player actively watching altar.
      */
     private int handleWorship() {
         // Snapshot relevant inventory state once for this handler pass
         Set<Integer> itemIds = new HashSet<>(EctofuntusConstants.BONEMEAL_IDS);
         itemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
-        ItemGroupResult inventorySnapshot = getInventorySnapshot(itemIds);
-        int bonemealCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
-        int slimeCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        ItemGroupResult inventorySnapshot = InventoryQueries.snapshot(script, itemIds, "Error taking inventory snapshot: ");
+        int bonemealCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slimeCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
 
         if (bonemealCount == 0 || slimeCount == 0) {
             ScriptLogger.info(script.getScript(), "Supplies depleted - worship complete");
@@ -243,18 +236,17 @@ public class WorshipTask {
         int previousBonemeal = bonemealCount;
         int maxTaps = bonemealCount * 3;  // Safety limit: ~3 taps per bone max
 
-        // Spam tap using JorkTaps with human variant (per Phase 08 context)
-        // Uses area-based tapping instead of RSObject.interact()
+        // Use area-based taps for reliable altar interactions.
         boolean success = JorkTaps.spamTapArea(
             script.getScript(),
             EctofuntusConstants.ECTOFUNTUS_ALTAR_AREA,
-            100,  // cubeHeight - standard object height
+            100,
             EctofuntusConstants.WORSHIP_HUMAN_TAP_MIN_DELAY,
             EctofuntusConstants.WORSHIP_HUMAN_TAP_MAX_DELAY,
             maxTaps,
-            () -> isWorshipComplete(),  // Existing baseline check condition
-            true,  // human = true (context requirement: human variant ONLY)
-            true   // ignoreTasks = true (suppress break/hop/afk during worship)
+            () -> isWorshipComplete(),
+            true,
+            true
         );
 
         if (success) {
@@ -285,12 +277,12 @@ public class WorshipTask {
         itemIds.add(EctofuntusConstants.BUCKET_OF_SLIME);
         itemIds.add(EctofuntusConstants.EMPTY_POT);
         itemIds.add(EctofuntusConstants.EMPTY_BUCKET);
-        ItemGroupResult inventorySnapshot = getInventorySnapshot(itemIds);
+        ItemGroupResult inventorySnapshot = InventoryQueries.snapshot(script, itemIds, "Error taking inventory snapshot: ");
 
-        int bonemealCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
-        int slimeCount = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
-        int emptyPots = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
-        int emptyBuckets = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
+        int bonemealCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BONEMEAL_IDS);
+        int slimeCount = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.BUCKET_OF_SLIME);
+        int emptyPots = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
+        int emptyBuckets = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
 
         ScriptLogger.info(script.getScript(), "Worship verification - emptyPots: " + emptyPots +
             ", emptyBuckets: " + emptyBuckets + ", baseline: " + baseline);
@@ -325,12 +317,13 @@ public class WorshipTask {
         // Update metrics
         if (bonesProcessedThisSession > 0) {
             script.incrementBonesProcessed(bonesProcessedThisSession);
+            script.incrementEctoTokens(bonesProcessedThisSession * EctofuntusConstants.ECTO_TOKENS_PER_BONE);
         }
 
-        // Reset state flags
+        // Reset state flags - collect tokens before banking
         script.setHasSlime(false);
         script.setHasBoneMeal(false);
-        script.setShouldBank(true);
+        script.setShouldCollectTokens(true);
 
         // Reset task state
         reset();
@@ -378,7 +371,7 @@ public class WorshipTask {
         }
 
         // Wait for position change - teleport handler already handled visible animation
-        boolean posChanged = script.pollFramesUntil(() -> {
+        boolean posChanged = script.pollFramesHuman(() -> {
             WorldPosition newPos = script.getWorldPosition();
             return newPos != null && !newPos.equals(startPos);
         }, RandomUtils.uniformRandom(500, 1000));
@@ -410,39 +403,7 @@ public class WorshipTask {
      * Uses a single search call to avoid double-counting visually identical items.
      */
     private int getBonemealCount() {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-            var search = wm.getInventory().search(EctofuntusConstants.BONEMEAL_IDS);
-            return search != null ? search.getAmount(EctofuntusConstants.BONEMEAL_IDS) : 0;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "Error counting bonemeal: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Gets the count of bucket of slime in inventory.
-     */
-    private int getSlimeCount() {
-        return getInventoryCount(EctofuntusConstants.BUCKET_OF_SLIME);
-    }
-
-    /**
-     * Gets the count of empty buckets in inventory.
-     */
-    private int getEmptyBucketCount() {
-        return getInventoryCount(EctofuntusConstants.EMPTY_BUCKET);
-    }
-
-    /**
-     * Gets the count of empty pots in inventory.
-     */
-    private int getEmptyPotCount() {
-        return getInventoryCount(EctofuntusConstants.EMPTY_POT);
+        return InventoryQueries.countItems(script, EctofuntusConstants.BONEMEAL_IDS, "Error counting bonemeal: ");
     }
 
     /**
@@ -451,55 +412,17 @@ public class WorshipTask {
      * @return true if worship is complete
      */
     private boolean isWorshipComplete() {
-        ItemGroupResult inventorySnapshot = getInventorySnapshot(
-            Set.of(EctofuntusConstants.EMPTY_POT, EctofuntusConstants.EMPTY_BUCKET)
+        ItemGroupResult inventorySnapshot = InventoryQueries.snapshot(
+            script,
+            Set.of(EctofuntusConstants.EMPTY_POT, EctofuntusConstants.EMPTY_BUCKET),
+            "Error taking inventory snapshot: "
         );
-        int emptyPots = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
-        int emptyBuckets = getSnapshotAmount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
+        int emptyPots = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_POT);
+        int emptyBuckets = InventoryQueries.amount(inventorySnapshot, EctofuntusConstants.EMPTY_BUCKET);
         int baseline = script.getSupplyBaseline();
 
         // Complete when both container types are back at baseline
         return emptyPots >= baseline && emptyBuckets >= baseline;
-    }
-
-    private ItemGroupResult getInventorySnapshot(Set<Integer> itemIds) {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null || itemIds == null || itemIds.isEmpty()) {
-                return null;
-            }
-            return wm.getInventory().search(itemIds);
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "Error taking inventory snapshot: " + e.getMessage());
-            return null;
-        }
-    }
-
-    private int getSnapshotAmount(ItemGroupResult snapshot, int itemId) {
-        return snapshot != null ? snapshot.getAmount(itemId) : 0;
-    }
-
-    private int getSnapshotAmount(ItemGroupResult snapshot, Set<Integer> itemIds) {
-        return snapshot != null ? snapshot.getAmount(itemIds) : 0;
-    }
-
-    /**
-     * Gets the count of an item in inventory.
-     */
-    private int getInventoryCount(int itemId) {
-        try {
-            var wm = script.getWidgetManager();
-            if (wm == null || wm.getInventory() == null) {
-                return 0;
-            }
-            ItemGroupResult search = wm.getInventory().search(Set.of(itemId));
-            return search != null ? search.getAmount(itemId) : 0;
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script.getScript(), "Error counting item " + itemId + ": " + e.getMessage());
-            return 0;
-        }
     }
 
     /**
