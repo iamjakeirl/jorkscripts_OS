@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
     name = "jorkTofuntus",
     author = "jork",
     version = 1.0,
-    threadUrl = "https://wiki.osmb.co.uk/article/jorkhunter-box-trapper",
+    threadUrl = "https://wiki.osmb.co.uk/article/jorktofuntus-ecto-automator-",
     skillCategory = SkillCategory.PRAYER
 )
 public class Ectofuntus extends AbstractMetricsScript implements EctofuntusScript {

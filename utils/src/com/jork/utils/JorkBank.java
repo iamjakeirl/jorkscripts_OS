@@ -17,75 +17,6 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-/**
- * A comprehensive banking utility that abstracts OSMB's Bank API into clean, reusable methods.
- * Handles bank detection, opening, deposits, withdrawals, and queries.
- *
- * <h2>Usage:</h2>
- * <pre>
- *     JorkBank bank = new JorkBank(script);
- *
- *     if (bank.open() == OpenResult.SUCCESS) {
- *         bank.depositAllExcept(ECTOPHIAL, TELEPORT_ITEM);
- *         bank.withdraw(BONES, 8);
- *         bank.close();
- *     }
- * </pre>
- *
- * <h2>IMPORTANT: OSMB Bank Tab System</h2>
- *
- * OSMB has an internal "selected tab" preference system that affects ALL bank operations.
- * Understanding this is critical to avoid unexpected behavior.
- *
- * <h3>How OSMB's Tab System Works:</h3>
- * <ul>
- *   <li>OSMB maintains an internal "selected tab" preference</li>
- *   <li>When {@code promptBankTabDialogue()} returns {@code true} in your Script, OSMB shows
- *       a dialogue when the bank first opens, asking the user to pick their preferred tab</li>
- *   <li>This selection is stored as the internal "selected tab" preference</li>
- *   <li><b>ALL bank operations</b> (search, withdraw, deposit, contains, etc.) will
- *       automatically switch to this "selected tab" before executing</li>
- * </ul>
- *
- * <h3>Critical Gotcha - getSelectedTabIndex() Has Side Effects:</h3>
- * <p>
- * The OSMB method {@code bank.getSelectedTabIndex()} is <b>NOT</b> a passive getter!
- * Calling it triggers OSMB to switch the bank UI back to the saved "selected tab" preference.
- * This means you cannot use it to verify a tab switch - the verification itself will undo
- * the switch you just made.
- * </p>
- *
- * <h3>Recommended Approach - Work WITH OSMB's System:</h3>
- * <ol>
- *   <li>Override {@code promptBankTabDialogue()} in your Script to return {@code true}</li>
- *   <li>Let the user select their preferred bank tab via OSMB's dialogue</li>
- *   <li>Do NOT manually switch tabs - OSMB will handle it automatically for all operations</li>
- *   <li>Remove any bank tab configuration from your script's UI - it's not needed</li>
- * </ol>
- *
- * <h3>Example Script Setup:</h3>
- * <pre>
- *     public class MyScript extends Script {
- *
- *         &#64;Override
- *         public boolean promptBankTabDialogue() {
- *             // Enable OSMB's bank tab dialogue - user selects tab, OSMB handles switching
- *             return true;
- *         }
- *
- *         // ... rest of script
- *     }
- * </pre>
- *
- * <h3>Note on Tab Methods:</h3>
- * <p>
- * JorkBank intentionally does not expose tab management methods. Let OSMB handle tab
- * switching automatically via the {@code promptBankTabDialogue()} system described above.
- * </p>
- *
- * @author jork
- * @see com.osmb.api.script.configuration.ScriptOptions#promptBankTabDialogue()
- */
 public class JorkBank {
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -744,48 +675,6 @@ public class JorkBank {
             return true;
         } catch (Exception e) {
             ScriptLogger.debug(script, "Error validating inventory keep set: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Checks if an amount requires the X (custom) quantity button.
-     * Standard amounts (1, 5, 10) have dedicated buttons and don't trigger X dialogue.
-     *
-     * <p>Currently unused — OSMB's default withdraw handles X-quantity correctly.
-     * Preserved for future use (e.g., single-tap optimization).</p>
-     */
-    private boolean isCustomAmount(int amount) {
-        return amount != 1 && amount != 5 && amount != 10;
-    }
-
-    /**
-     * Attempts to withdraw by directly interacting with the bank item's right-click menu,
-     * bypassing OSMB's withdraw flow (which always enters the X dialogue).
-     * Only works when X quantity is already cached to the desired amount.
-     *
-     * <p>Currently unused — OSMB's default withdraw handles X-quantity correctly.
-     * Preserved for future use (e.g., single-tap optimization).</p>
-     *
-     * @return true if the interaction was sent successfully
-     */
-    private boolean withdrawViaDirectInteract(Bank bank, int itemId, int amount) {
-        try {
-            ItemGroupResult search = bank.search(Set.of(itemId));
-            if (search == null) {
-                return false;
-            }
-
-            ItemSearchResult item = search.getItem(itemId);
-            if (item == null) {
-                return false;
-            }
-
-            // Try"Withdraw-<amount>"
-            return item.interact("Withdraw-" + amount);
-        } catch (Exception e) {
-            ExceptionUtils.rethrowIfTaskInterrupted(e);
-            ScriptLogger.debug(script, "Direct withdraw interact failed: " + e.getMessage());
             return false;
         }
     }
