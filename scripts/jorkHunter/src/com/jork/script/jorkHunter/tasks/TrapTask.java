@@ -117,7 +117,7 @@ public class TrapTask extends AbstractHuntingTask {
 
             ScriptLogger.debug(script, "Waiting for respawn circle to appear at " + finalTrapPos);
 
-            boolean circleAppeared = script.submitHumanTask(() ->
+            boolean circleAppeared = script.pollFramesHuman(() ->
                 detectRespawnCircleAtPosition(finalTrapPos), 5000);
 
             if (circleAppeared) {
@@ -264,7 +264,7 @@ public class TrapTask extends AbstractHuntingTask {
                 if (!isHighPriority && !script.isDrainingForBreak() && !trapManager.isCurrentlyLayingTrap() && totalTraps < maxTraps) {
                     WorldPosition currentPos = script.getWorldPosition();
                     if (currentPos != null) {
-                        boolean positionValid = script.submitHumanTask(() -> {
+                        boolean positionValid = script.pollFramesHuman(() -> {
                             Set<WorldPosition> existingTraps = new HashSet<>(trapManager.getLaidTrapPositions());
                             return placementStrategy.isValidPosition(currentPos, existingTraps);
                         }, RandomUtils.weightedRandom(300, 600));
@@ -295,7 +295,7 @@ public class TrapTask extends AbstractHuntingTask {
                     ScriptLogger.navigation(script, "Moving to right edge at " + rightEdgePos + " to restore trap visibility");
                     script.getWalker().walkTo(rightEdgePos, walkConfigApprox);
 
-                    boolean reached = script.submitTask(() -> {
+                    boolean reached = script.pollFramesUntil(() -> {
                         WorldPosition newPos = script.getWorldPosition();
                         return newPos != null && newPos.distanceTo(rightEdgePos) <= 2.0;
                     }, 8000);
@@ -373,7 +373,7 @@ public class TrapTask extends AbstractHuntingTask {
 
         switch (result.type()) {
             case TRAP_CHECKED, TRAP_RESET, TRAP_REMOVED -> {
-                boolean inventoryChanged = script.submitHumanTask(() -> {
+                boolean inventoryChanged = script.pollFramesHuman(() -> {
                     int currentCount = getTrapCountInInventory();
                     return currentCount != initialTrapCount;
                 }, script.random(2500, 3500));
@@ -422,7 +422,7 @@ public class TrapTask extends AbstractHuntingTask {
                     trapLayingStartTime = System.currentTimeMillis();
 
                     ScriptLogger.debug(script, "Starting reset from position: " + resetStartPos);
-                    script.submitTask(() -> {
+                    script.pollFramesUntil(() -> {
                         WorldPosition currentPos = script.getWorldPosition();
                         return currentPos != null && currentPos.equals(trapPos);
                     }, 2000);
@@ -446,7 +446,7 @@ public class TrapTask extends AbstractHuntingTask {
                 if (verifyResult.success()) {
                     ScriptLogger.info(script, "Blind tap verification succeeded - waiting for inventory change");
 
-                    boolean inventoryChanged = script.submitHumanTask(() -> {
+                    boolean inventoryChanged = script.pollFramesHuman(() -> {
                         int currentCount = getTrapCountInInventory();
                         return currentCount != initialTrapCount;
                     }, script.random(2500, 3500));
@@ -487,7 +487,7 @@ public class TrapTask extends AbstractHuntingTask {
                 if (distance > 1) {
                     ScriptLogger.navigation(script, "Moving to viewing position: " + viewingPos);
                     script.getWalker().walkTo(viewingPos, walkConfigApprox);
-                    script.submitHumanTask(() -> script.getPixelAnalyzer().isPlayerAnimating(0.4), 500);
+                    script.pollFramesHuman(() -> script.getPixelAnalyzer().isPlayerAnimating(0.4), 500);
                 }
             }
         } else {
@@ -664,7 +664,7 @@ public class TrapTask extends AbstractHuntingTask {
 
         final WorldPosition[] trapPosition = new WorldPosition[1];
 
-        boolean submitted = script.submitTask(() -> {
+        boolean submitted = script.pollFramesUntil(() -> {
             WorldPosition currentPos = script.getWorldPosition();
             if (currentPos == null) {
                 ScriptLogger.warning(script, "Could not read player position during trap interaction");

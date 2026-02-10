@@ -278,7 +278,7 @@ public class TrapInteractionHandler implements InteractionHandler {
 
         // Attempt a blind tap to see what menu options are available
         boolean[] trapFound = {false};
-        boolean tapped = script.submitHumanTask(() ->
+        boolean tapped = script.pollFramesHuman(() ->
             script.getFinger().tapGameScreen(resizedCube, (menuEntries) -> {
                 for (MenuEntry entry : menuEntries) {
                     String action = entry.getAction();
@@ -451,7 +451,7 @@ public class TrapInteractionHandler implements InteractionHandler {
             final int currentAttempt = attempt;
             cancelSelected = false; // Reset flag for this attempt
 
-            boolean interacted = script.submitHumanTask(() ->
+            boolean interacted = script.pollFramesHuman(() ->
                 script.getFinger().tapGameScreen(tapCube, (menuEntries) -> {
                     // Draw polygon for chinchompas while menu is open
                     if (trapType == TrapType.CHINCHOMPA && currentInteractionPolygon != null) {
@@ -628,7 +628,7 @@ public class TrapInteractionHandler implements InteractionHandler {
         String[] acceptableActions = trapType.getActionsForTrapState(state);
         String[] selectedAction = new String[1]; // Track which action was selected
 
-        boolean interacted = script.submitHumanTask(() ->
+        boolean interacted = script.pollFramesHuman(() ->
             script.getFinger().tapGameScreen(tapArea, (menuEntries) -> {
                 // HIGHEST PRIORITY: Check for EXPEDITE_COLLECTION flag
                 if (trapInfo.flags() != null && trapInfo.flags().hasFlag(TrapFlag.EXPEDITE_COLLECTION)) {

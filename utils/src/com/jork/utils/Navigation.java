@@ -188,6 +188,23 @@ public class Navigation {
      * @return true if movement was successful, false otherwise
      */
     public boolean simpleMoveTo(WorldPosition targetPosition, int timeout, int tolerance) {
+        return simpleMoveToInternal(targetPosition, timeout, tolerance, true);
+    }
+
+    /**
+     * Simple screen-based movement for short distances using direct taps (no explicit "Walk here" action).
+     * Intended for fast local repositioning where menu-hook style action selection is unnecessary.
+     *
+     * @param targetPosition The target WorldPosition to move to
+     * @param timeout Maximum time to wait for movement completion in milliseconds
+     * @param tolerance Distance tolerance in tiles (0 for exact position, 1 for adjacent, etc.)
+     * @return true if movement was successful, false otherwise
+     */
+    public boolean simpleMoveToFastTap(WorldPosition targetPosition, int timeout, int tolerance) {
+        return simpleMoveToInternal(targetPosition, timeout, tolerance, false);
+    }
+
+    private boolean simpleMoveToInternal(WorldPosition targetPosition, int timeout, int tolerance, boolean useWalkHereAction) {
         if (targetPosition == null) {
             ScriptLogger.warning(script, "Cannot move to null position");
             return false;
@@ -226,8 +243,10 @@ public class Navigation {
             
             ScriptLogger.debug(script, "Screen tap attempt " + attempt + "/2 to " + targetPosition);
             
-            // Perform tap with "Walk here" context menu directly
-            boolean tapped = script.getFinger().tapGameScreen(scaledTilePoly, "Walk here");
+            // Perform tap either via explicit Walk-here action or direct single tap.
+            boolean tapped = useWalkHereAction
+                ? script.getFinger().tapGameScreen(scaledTilePoly, "Walk here")
+                : script.getFinger().tapGameScreen(scaledTilePoly);
             
             if (!tapped) {
                 ScriptLogger.debug(script, "Failed to tap tile on attempt " + attempt);

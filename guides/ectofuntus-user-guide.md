@@ -7,11 +7,11 @@ Automates Prayer training / token getting at the Ectofuntus. The script banks, c
 - Ectophial in your bank or inventory
 - Bones (whichever type you select)
 - Empty pots and empty buckets
-- If using a spell teleport to bank: the correct spellbook and runes (or a rune pouch)
+- If using a spell teleport to bank: the correct spellbook and runes (or a rune pouch with said runes in it)
 
 ## Getting Started
 1. Copy the JAR into your OSMB scripts folder.
-2. Place all needed items into a single tab, all bones, runes for TP (if not rune pouch mode), ectophial, buckets, pots, slime. recommend having at least 18 empty buckets and pots. 
+2. Place all needed items into a single tab, all bones, runes for TP (if not rune pouch mode), ectophial, buckets, pots, slime. recommend having at least 18 empty buckets and pots. Put the runes you need for TP inside your rune pouch if you want to use one. 
 3. Start the script and pick your bone type and banking method. Mixed bone mode is on by default — it uses all bone types in the selected tab. The one set in the dropdown is used first.
 4. Adjust any options you want, then click **Start Training**.
 
@@ -38,5 +38,9 @@ Automates Prayer training / token getting at the Ectofuntus. The script banks, c
 - **Stops saying missing ectophial** — make sure you have an Ectophial in your bank or inventory.
 - **Stops saying missing pots/buckets** — restock empty pots and empty buckets.
 - **Spell teleport issues** — check you're on the right spellbook and have the runes.
-- **Rune pouch errors** — make sure the rune pouch is in your inventory before starting.
+- **Rune pouch errors** — make sure the rune pouch is in your inventory before starting and full of the runes you need.
 - **No bones found** — stock the bone type you selected, or enable "use all bone types" if using mixed bones.
+
+
+**CRITICAL: NPC Highlights must be ON using the default color. Turn off tile position highlights for NPCS so they look like this: and highlight the ghost disciples that give you the ecto tokens when you ask. **
+Agility highlights / helpers OFF. No bank pin support. 

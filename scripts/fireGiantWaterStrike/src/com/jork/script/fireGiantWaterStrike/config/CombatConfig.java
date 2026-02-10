@@ -7,6 +7,10 @@ package com.jork.script.fireGiantWaterStrike.config;
 public record CombatConfig(
     LootMode lootMode,
     FoodType foodType,
+    boolean staffCoversAirRune,
+    boolean staffCoversWaterRune,
+    boolean staffCoversEarthRune,
+    boolean staffCoversFireRune,
     boolean xpFailsafeEnabled,
     int xpFailsafeTimeoutMinutes,
     boolean xpFailsafePauseDuringLogout,
@@ -19,6 +23,17 @@ public record CombatConfig(
      * @return default CombatConfig with TELEGRAB loot, LOBSTER food, failsafe on (5 min), pause on, debug off
      */
     public static CombatConfig getDefault() {
-        return new CombatConfig(LootMode.TELEGRAB, FoodType.LOBSTER, true, 5, true, false);
+        return new CombatConfig(
+            LootMode.TELEGRAB,
+            FoodType.LOBSTER,
+            false,
+            false,
+            false,
+            false,
+            true,
+            5,
+            true,
+            false
+        );
     }
 }

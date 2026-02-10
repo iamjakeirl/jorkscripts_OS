@@ -21,6 +21,9 @@ public enum ScriptState {
     /** Track ongoing combat and update last-known target position. */
     MONITOR_COMBAT,
 
+    /** Re-attack the same locked target UUID after returning to anchor. */
+    REENGAGE_LOCKED_TARGET,
+
     /** Evaluate loot mode, apply inventory policy, dispatch loot. */
     POST_KILL,
 

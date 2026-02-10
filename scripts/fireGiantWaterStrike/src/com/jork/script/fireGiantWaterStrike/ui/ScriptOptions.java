@@ -43,6 +43,10 @@ public class ScriptOptions extends VBox {
 
     private final ComboBox<String> lootModeDropdown;
     private final ComboBox<String> foodTypeDropdown;
+    private final CheckBox staffCoversAirRuneCheck;
+    private final CheckBox staffCoversWaterRuneCheck;
+    private final CheckBox staffCoversEarthRuneCheck;
+    private final CheckBox staffCoversFireRuneCheck;
     private final CheckBox xpFailsafeCheck;
     private final TextField xpFailsafeTimeoutInput;
     private final CheckBox xpFailsafePauseDuringLogoutCheck;
@@ -126,7 +130,41 @@ public class ScriptOptions extends VBox {
         HBox foodRow = new HBox(10, foodLbl, foodTypeDropdown);
         foodRow.setAlignment(Pos.CENTER_LEFT);
 
-        VBox combatSection = new VBox(5, combatSectionLabel, lootRow, foodRow);
+        Label staffRunesLabel = new Label("Staff provides elemental runes:");
+        staffRunesLabel.setStyle("-fx-text-fill: " + TEXT_PRIMARY + "; -fx-font-size: 11px;");
+        staffRunesLabel.setPadding(new Insets(4, 0, 0, 0));
+
+        staffCoversAirRuneCheck = new CheckBox("Air");
+        staffCoversAirRuneCheck.setStyle(getCheckBoxStyle());
+        staffCoversAirRuneCheck.setSelected(false);
+
+        staffCoversWaterRuneCheck = new CheckBox("Water");
+        staffCoversWaterRuneCheck.setStyle(getCheckBoxStyle());
+        staffCoversWaterRuneCheck.setSelected(false);
+
+        staffCoversEarthRuneCheck = new CheckBox("Earth");
+        staffCoversEarthRuneCheck.setStyle(getCheckBoxStyle());
+        staffCoversEarthRuneCheck.setSelected(false);
+
+        staffCoversFireRuneCheck = new CheckBox("Fire");
+        staffCoversFireRuneCheck.setStyle(getCheckBoxStyle());
+        staffCoversFireRuneCheck.setSelected(false);
+
+        HBox staffRuneRow = new HBox(
+            10,
+            staffCoversAirRuneCheck,
+            staffCoversWaterRuneCheck,
+            staffCoversEarthRuneCheck,
+            staffCoversFireRuneCheck
+        );
+        staffRuneRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label staffRuneInfo = new Label("Checked runes are excluded from inventory rune checks");
+        staffRuneInfo.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 9px;");
+        staffRuneInfo.setWrapText(true);
+        staffRuneInfo.setPadding(new Insets(0, 0, 0, 20));
+
+        VBox combatSection = new VBox(5, combatSectionLabel, lootRow, foodRow, staffRunesLabel, staffRuneRow, staffRuneInfo);
         combatSection.setPadding(new Insets(0, 0, 10, 0));
 
         // ── Advanced Options Section ────────────────────────────────
@@ -216,6 +254,10 @@ public class ScriptOptions extends VBox {
             CombatConfig config = new CombatConfig(
                 selectedLoot,
                 selectedFood,
+                staffCoversAirRuneCheck.isSelected(),
+                staffCoversWaterRuneCheck.isSelected(),
+                staffCoversEarthRuneCheck.isSelected(),
+                staffCoversFireRuneCheck.isSelected(),
                 xpFailsafeCheck.isSelected(),
                 timeout,
                 xpFailsafePauseDuringLogoutCheck.isSelected(),
